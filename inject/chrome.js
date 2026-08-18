@@ -38,10 +38,65 @@
     { id: "copy",     title: "Copy visible thread",   hint: "Dispatches cwa:copy",     event: EVENTS.copy,    keywords: "clipboard markdown" },
     { id: "save-md",  title: "Save as Markdown",      hint: "Dispatches cwa:save-md",  event: EVENTS.saveMd,  keywords: "download md file" },
     { id: "save-zip", title: "Save zip (best effort)", hint: "Dispatches cwa:save-zip", event: EVENTS.saveZip, keywords: "archive export media" },
+    { id: "diagnostics",  title: "Diagnostics snapshot",  hint: "Selector/lifecycle (redacted)", action: "diagnostics", keywords: "safe mode selectors" },
     { id: "composer", title: "Focus composer",        hint: "Jump to the prompt",          action: "composer",    keywords: "prompt textarea input" },
     { id: "latest",   title: "Jump to latest message", hint: "Scroll to last mounted turn", action: "latest",     keywords: "bottom end" },
-    { id: "find",     title: "Find in page",          hint: "Use Cmd+F — Pake find",       action: "find",        keywords: "search" },
+    { id: "find",         title: "Find in page",          hint: "Use Cmd+F — Pake find",       action: "find",         keywords: "search" },
   ];
+
+  var lifecycle   = null;
+  var safeModeApi = null;
+  var scheduler   = null;
+
+  function allPaletteCommands() {
+    var tools = global.CwaTools;
+    var toolIds = ["copy-visible", "save-md", "save-zip", "diagnostics"];
+    var localIds = { composer: true, latest: true, find: true };
+    var catalog;
+    var byId = {};
+    var toolCommands = [];
+    var localCommands = PALETTE_COMMANDS.filter(function (cmd) {
+      return Boolean(localIds[cmd.id]);
+    });
+    var i;
+    var item;
+
+    if (!tools || typeof tools.catalog !== "function") {
+      return PALETTE_COMMANDS.slice();
+    }
+    try {
+      catalog = tools.catalog();
+    } catch (_) {
+      return PALETTE_COMMANDS.slice();
+    }
+    if (!Array.isArray(catalog)) {
+      return PALETTE_COMMANDS.slice();
+    }
+    for (i = 0; i < catalog.length; i++) {
+      item = catalog[i];
+      if (item && toolIds.indexOf(item.id) !== -1) {
+        byId[item.id] = item;
+      }
+    }
+    for (i = 0; i < toolIds.length; i++) {
+      item = byId[toolIds[i]];
+      if (!item) {
+        return PALETTE_COMMANDS.slice();
+      }
+      toolCommands.push({
+        id      : item.id,
+        title   : item.title,
+        event   : item.event,
+        action  : item.action,
+        keywords: item.keywords,
+      });
+    }
+    return toolCommands.concat(localCommands);
+  }
+
+  function isSafe() {
+    return Boolean(safeModeApi && safeModeApi.isActive && safeModeApi.isActive());
+  }
 
   function clampSidebarWidth(value, min, max, fallback) {
     var lo = min == null ? SIDEBAR_MIN : min;
@@ -104,6 +159,8 @@
     if (code === "clipboard_denied") return "Clipboard permission denied";
     if (code === "download_denied") return "Download blocked";
     if (code === "unsupported_route") return "Nothing to export on this page";
+    if (code === "safe_mode") return "Safe mode: chrome limited, export still available";
+    if (code === "native_unavailable") return "Native companion unavailable; used browser download";
     return detail.message || code;
   }
 
@@ -118,6 +175,12 @@
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT,
     EVENTS: EVENTS,
     STORAGE_WIDTH: STORAGE_WIDTH,
+    runtime: function runtime() {
+      return {
+        lifecycle: lifecycle && lifecycle.getState ? lifecycle.getState() : null,
+        safeMode : safeModeApi && safeModeApi.snapshot ? safeModeApi.snapshot() : null,
+      };
+    },
   };
 
   global.CwaChrome = api;
@@ -139,7 +202,7 @@
   var minimapMessages = [];
   var minimapScroller = null;
   var paletteIndex = 0;
-  var paletteFiltered = PALETTE_COMMANDS.slice();
+  var paletteFiltered = allPaletteCommands();
   var rafMinimap = 0;
   var rafSidebar = 0;
   var mutateTimer = 0;
@@ -207,9 +270,6 @@
   function emit(name) {
     var detail = { source: "chrome", at: Date.now() };
     var opts = { bubbles: true, cancelable: true, detail: detail };
-    try {
-      document.dispatchEvent(new CustomEvent(name, opts));
-    } catch (_) {}
     try {
       window.dispatchEvent(new CustomEvent(name, opts));
     } catch (_) {}
@@ -292,10 +352,38 @@
     return w > 0 && w < SIDEBAR_COLLAPSE_MAX;
   }
 
+  function sidebarSelectors() {
+    var sel = global.CwaSelectors;
+    if (sel && sel.SIDEBAR_SELECTORS && sel.SIDEBAR_SELECTORS.length) {
+      return sel.SIDEBAR_SELECTORS;
+    }
+    return SIDEBAR_SELECTORS;
+  }
+
+  function messageSelector() {
+    var sel = global.CwaSelectors;
+    if (sel && sel.MESSAGE_SELECTOR) {
+      return sel.MESSAGE_SELECTOR;
+    }
+    return MESSAGE_SELECTOR;
+  }
+
   function findSidebar() {
+    var selectors = global.CwaSelectors;
+    var resolved;
     var seen = [];
-    for (var i = 0; i < SIDEBAR_SELECTORS.length; i++) {
-      var found = qsa(SIDEBAR_SELECTORS[i]);
+    var list = sidebarSelectors();
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "sidebar");
+      if (resolved && resolved.node) {
+        if (!resolved.node.closest ||
+            !resolved.node.closest("#" + NS + "-palette, ." + NS + "-toolbar, ." + NS + "-minimap")) {
+          return resolved.node;
+        }
+      }
+    }
+    for (var i = 0; i < list.length; i++) {
+      var found = qsa(list[i]);
       for (var j = 0; j < found.length; j++) {
         if (seen.indexOf(found[j]) === -1) seen.push(found[j]);
       }
@@ -342,6 +430,7 @@
   }
 
   function onHandlePointerDown(event) {
+    if (isSafe()) return;
     if (event.button != null && event.button !== 0) return;
     if (!sidebarEl) return;
     dragging = true;
@@ -355,12 +444,14 @@
   }
 
   function onHandlePointerMove(event) {
+    if (isSafe()) return;
     if (!dragging || !sidebarEl) return;
     var next = clampSidebarWidth(dragStartW + (event.clientX - dragStartX));
     applySidebarWidth(sidebarEl, next, true);
   }
 
   function onHandlePointerUp(event) {
+    if (isSafe()) return;
     if (!dragging) return;
     dragging = false;
     if (handleEl) handleEl.removeAttribute("data-active");
@@ -373,6 +464,7 @@
   }
 
   function onHandleKeyDown(event) {
+    if (isSafe()) return;
     if (!sidebarEl) return;
     var step = event.shiftKey ? 24 : 8;
     var current = sidebarEl.getBoundingClientRect().width;
@@ -419,6 +511,7 @@
   }
 
   function syncSidebar() {
+    if (isSafe()) return;
     var node = findSidebar();
     if (!node) return;
     if (sidebarEl !== node) {
@@ -431,6 +524,7 @@
     }
     var collapsed = isCollapsed(node);
     if (handleEl) {
+      handleEl.disabled = false;
       if (collapsed) handleEl.setAttribute("hidden", "");
       else handleEl.removeAttribute("hidden");
     }
@@ -438,7 +532,7 @@
   }
 
   function findConversationScroller(fromEl) {
-    var node = fromEl || qs(MESSAGE_SELECTOR);
+    var node = fromEl || qs(messageSelector());
     while (node && node !== document.body && node !== document.documentElement) {
       var style = window.getComputedStyle(node);
       var oy = style.overflowY;
@@ -469,12 +563,21 @@
   }
 
   function collectMessages() {
-    return qsa(MESSAGE_SELECTOR).filter(function (node) {
+    var selectors = global.CwaSelectors;
+    var resolved;
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "message");
+      return ((resolved && resolved.nodes) || []).filter(function (node) {
+        return node.getBoundingClientRect().height > 0;
+      });
+    }
+    return qsa(messageSelector()).filter(function (node) {
       return node.getBoundingClientRect().height > 0;
     });
   }
 
   function rebuildMinimap() {
+    if (isSafe()) return;
     var strip = document.getElementById(NS + "-minimap");
     if (!strip) return;
     var messages = collectMessages();
@@ -501,6 +604,11 @@
   }
 
   function scheduleMinimap() {
+    if (isSafe()) return;
+    if (scheduler) {
+      scheduler.schedule("minimap", rebuildMinimap, { kind: "raf" });
+      return;
+    }
     if (rafMinimap) cancelAnimationFrame(rafMinimap);
     rafMinimap = requestAnimationFrame(function () {
       rafMinimap = 0;
@@ -577,6 +685,15 @@
   }
 
   function focusComposer() {
+    var selectors = global.CwaSelectors;
+    var resolved;
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "composer");
+      if (resolved && resolved.node) {
+        if (typeof resolved.node.focus === "function") resolved.node.focus();
+        return;
+      }
+    }
     var node =
       qs("#prompt-textarea") ||
       qs("[data-testid*='composer' i] textarea") ||
@@ -609,9 +726,9 @@
 
   function renderPaletteList(query) {
     var q = (query || "").trim().toLowerCase();
-    paletteFiltered = PALETTE_COMMANDS.filter(function (cmd) {
+    paletteFiltered = allPaletteCommands().filter(function (cmd) {
       if (!q) return true;
-      return (cmd.title + " " + cmd.hint + " " + (cmd.keywords || "")).toLowerCase().indexOf(q) !== -1;
+      return (cmd.title + " " + (cmd.hint || "") + " " + (cmd.keywords || "")).toLowerCase().indexOf(q) !== -1;
     });
     paletteIndex = 0;
     var list = document.getElementById(NS + "-palette-list");
@@ -626,7 +743,7 @@
         "data-id": cmd.id,
         "aria-selected": i === 0 ? "true" : "false",
       });
-      item.textContent = cmd.title + " — " + cmd.hint;
+      item.textContent = cmd.title + (cmd.hint ? " — " + cmd.hint : "");
       item.addEventListener("click", function () {
         runCommand(cmd);
       });
@@ -649,12 +766,56 @@
     }
   }
 
+  function emitDiagnostics() {
+    var tools = global.CwaTools;
+    var diag  = global.CwaDiagnostics;
+    var sel   = global.CwaSelectors;
+    var probe = sel && typeof sel.probe === "function" ? sel.probe(document) : {};
+    var snap;
+    if (tools && typeof tools.run === "function") {
+      return tools.run("diagnostics", {
+        window    : window,
+        probe     : probe,
+        lifecycle : lifecycle,
+        safeMode  : safeModeApi,
+        href      : window.location && window.location.href,
+      });
+    }
+    if (diag && typeof diag.snapshot === "function") {
+      snap = diag.snapshot({
+        probe     : probe,
+        lifecycle : lifecycle,
+        safeMode  : safeModeApi,
+        href      : window.location && window.location.href,
+      });
+      diag.emit({ window: window }, snap);
+      return snap;
+    }
+    return null;
+  }
+
   function runCommand(cmd) {
+    var tools;
+    var selectors;
+    var probe;
     closePalette();
     if (!cmd) return;
+    tools = global.CwaTools;
+    if (tools && typeof tools.find === "function" && typeof tools.run === "function" && tools.find(cmd.id)) {
+      selectors = global.CwaSelectors;
+      probe = selectors && typeof selectors.probe === "function" ? selectors.probe(document) : {};
+      return tools.run(cmd.id, {
+        window   : window,
+        probe    : probe,
+        lifecycle: lifecycle,
+        safeMode : safeModeApi,
+        href     : location.href,
+      });
+    }
     if (cmd.event) emit(cmd.event);
     if (cmd.action === "composer") focusComposer();
     if (cmd.action === "latest") jumpLatest();
+    if (cmd.action === "diagnostics") emitDiagnostics();
   }
 
   function openPalette() {
@@ -899,17 +1060,47 @@
     window.addEventListener("hashchange", onNavigate);
   }
 
+  function refreshCompatibility() {
+    var sel = global.CwaSelectors;
+    var probe;
+    var state;
+    if (lifecycle && window.location) {
+      lifecycle.noteHref(window.location.href);
+    }
+    if (sel && typeof sel.probe === "function") {
+      probe = sel.probe(document);
+      if (safeModeApi && typeof safeModeApi.observe === "function") {
+        safeModeApi.observe(probe);
+      }
+      if (probe.sidebar && lifecycle && typeof lifecycle.getState === "function") {
+        state = lifecycle.getState();
+        if (!probe.sidebar.hit && state !== "safe" && typeof lifecycle.degrade === "function") {
+          lifecycle.degrade("sidebar_miss");
+        } else if (probe.sidebar.hit && state === "degraded" && typeof lifecycle.recover === "function") {
+          lifecycle.recover();
+        }
+      }
+    }
+  }
+
   function onSpaNavigate() {
+    refreshCompatibility();
     ensureThemeStylesheet();
     mountToolbar();
     mountPalette();
-    mountMinimap();
     mountExportStatus();
-    syncSidebar();
-    scheduleMinimap();
+    if (!isSafe()) {
+      mountMinimap();
+      syncSidebar();
+      scheduleMinimap();
+    }
   }
 
   function onMutations() {
+    if (scheduler) {
+      scheduler.schedule("mutate", onSpaNavigate, { kind: "timeout", delay: 80 });
+      return;
+    }
     if (mutateTimer) clearTimeout(mutateTimer);
     mutateTimer = setTimeout(function () {
       mutateTimer = 0;
@@ -928,6 +1119,10 @@
       try {
         var ro = new ResizeObserver(function () {
           scheduleMinimap();
+          if (scheduler) {
+            scheduler.schedule("sidebar-resize", syncSidebar, { kind: "raf" });
+            return;
+          }
           if (!rafSidebar) {
             rafSidebar = requestAnimationFrame(function () {
               rafSidebar = 0;
@@ -940,7 +1135,63 @@
     }
   }
 
+  function ensureRuntime() {
+    if (!scheduler && global.CwaScheduler && typeof global.CwaScheduler.createScheduler === "function") {
+      scheduler = global.CwaScheduler.createScheduler();
+    }
+    if (!lifecycle && global.CwaLifecycle && typeof global.CwaLifecycle.createLifecycle === "function") {
+      lifecycle = global.CwaLifecycle.createLifecycle({
+        href: window.location && window.location.href,
+      });
+      lifecycle.boot();
+    }
+    if (!safeModeApi && global.CwaSafeMode && typeof global.CwaSafeMode.createSafeMode === "function") {
+      safeModeApi = global.CwaSafeMode.createSafeMode({
+        onChange: function (snap) {
+          if (snap.active) {
+            if (lifecycle && typeof lifecycle.enterSafe === "function") {
+              lifecycle.enterSafe(snap.reason);
+            }
+            if (scheduler && typeof scheduler.cancel === "function") {
+              scheduler.cancel("minimap");
+              scheduler.cancel("sidebar-resize");
+            }
+            if (rafMinimap) {
+              cancelAnimationFrame(rafMinimap);
+              rafMinimap = 0;
+            }
+            if (rafSidebar) {
+              cancelAnimationFrame(rafSidebar);
+              rafSidebar = 0;
+            }
+            dragging = false;
+            if (handleEl) {
+              handleEl.setAttribute("hidden", "");
+              handleEl.disabled = true;
+            }
+            emitStatusSafe(snap);
+          }
+        },
+      });
+    }
+  }
+
+  function emitStatusSafe(snap) {
+    try {
+      window.dispatchEvent(new CustomEvent("cwa:export-status", {
+        bubbles: true,
+        detail : {
+          action : "chrome",
+          ok     : true,
+          code   : "safe_mode",
+          message: snap.reason || "safe_mode",
+        },
+      }));
+    } catch (_) {}
+  }
+
   function boot() {
+    ensureRuntime();
     ensureThemeStylesheet();
     var host = document.body || document.documentElement;
     if (!host) {
@@ -949,14 +1200,16 @@
     }
     mountToolbar();
     mountPalette();
-    mountMinimap();
     mountExportStatus();
-    syncSidebar();
+    refreshCompatibility();
+    if (!isSafe()) {
+      mountMinimap();
+      syncSidebar();
+    }
     bindObservers();
     hookHistory(onSpaNavigate);
     window.addEventListener("keydown", onGlobalKeyDown, true);
     window.addEventListener("cwa:export-status", onExportStatus);
-    document.addEventListener("cwa:export-status", onExportStatus);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) onSpaNavigate();
     });

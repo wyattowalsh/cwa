@@ -96,6 +96,14 @@ test("formatExportStatus covers copy, zip, and denial codes", () => {
   assert.equal(formatExportStatus({ ok: false, code: "jszip_missing" }), "ZIP unavailable (JSZip missing)");
   assert.equal(formatExportStatus({ ok: false, code: "clipboard_denied" }), "Clipboard permission denied");
   assert.equal(formatExportStatus({ ok: false, code: "duplicate" }), "Export already in progress");
+  assert.equal(
+    formatExportStatus({ ok: true, code: "safe_mode" }),
+    "Safe mode: chrome limited, export still available"
+  );
+  assert.equal(
+    formatExportStatus({ ok: true, code: "native_unavailable" }),
+    "Native companion unavailable; used browser download"
+  );
 });
 
 test("requiring chrome.js in node does not boot DOM chrome", () => {
