@@ -362,6 +362,7 @@
         included: included.mediaCount == null ? 0 : included.mediaCount,
         failed  : input.failedMedia || [],
         skipped : input.skippedMedia || [],
+        workflow: "visible-dom",
       },
       officialExport: OFFICIAL_EXPORT_HELP,
     };
@@ -928,6 +929,42 @@
     return /^https?:\/\//i.test(url) || /^\/(?!\/)/.test(url);
   }
 
+  function isForbiddenMediaPath(pathname) {
+    var path = String(pathname || "");
+    return path.indexOf("/backend-api/") === 0 ||
+      path.indexOf("/api/auth/") === 0;
+  }
+
+  function isAllowedMediaUrl(url, origin) {
+    var href = String(url || "");
+    var parsed;
+    if (!isFetchableUrl(href)) {
+      return false;
+    }
+    try {
+      parsed = /^\/(?!\/)/.test(href)
+        ? new URL(href, origin || "http://localhost")
+        : new URL(href);
+    } catch (err) {
+      return false;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    return !isForbiddenMediaPath(parsed.pathname);
+  }
+
+  function mediaOrigin(root, fallback) {
+    var doc;
+    var loc;
+    if (fallback) {
+      return fallback;
+    }
+    doc = root && root.nodeType === 9 ? root : root && root.ownerDocument;
+    loc = doc && doc.defaultView && doc.defaultView.location;
+    return (loc && loc.origin && loc.origin !== "null") ? loc.origin : "";
+  }
+
   function collectMediaFromMessages(messages) {
     var out = [];
     var i;
@@ -946,6 +983,54 @@
     return out;
   }
 
+  function collectVisibleFileCards(root, origin, forbiddenItems) {
+    var out = [];
+    var scope;
+    var links;
+    var i;
+    var el;
+    var href;
+    var name;
+    if (!root || !root.querySelectorAll) {
+      return out;
+    }
+    scope = String(root.tagName || "").toUpperCase() === "MAIN"
+      ? root
+      : root.querySelector("main");
+    if (!scope) {
+      return out;
+    }
+    origin = mediaOrigin(root, origin);
+    try {
+      links = scope.querySelectorAll(
+        "a[download], a[href*='/files/'], a[data-testid*='file-card'], " +
+        "a[data-testid*='attachment'], [data-testid*='file-card'] a, " +
+        "[data-testid*='attachment'] a"
+      );
+    } catch (err) {
+      return out;
+    }
+    for (i = 0; i < links.length; i += 1) {
+      el = links[i];
+      if (el.closest && el.closest("nav, .cwa-toolbar, .cwa-palette, .cwa-minimap, .cwa-export-status")) {
+        continue;
+      }
+      href = el.getAttribute("href") || "";
+      if (!href || !isFetchableUrl(href)) {
+        continue;
+      }
+      if (!isAllowedMediaUrl(href, origin)) {
+        if (forbiddenItems) {
+          forbiddenItems.push({ url: href, reason: "forbidden_endpoint" });
+        }
+        continue;
+      }
+      name = el.getAttribute("download") || cleanText(el.textContent) || "file";
+      out.push({ url: href, alt: name, kind: "file-card" });
+    }
+    return out;
+  }
+
   function extensionFromNameOrType(url, mime) {
     var match = String(url).match(/\.(png|jpe?g|gif|webp|svg|pdf|txt|csv|json|md|zip)(?:\?|$)/i);
     if (match) {
@@ -957,6 +1042,8 @@
     if (/gif/i.test(mime))  return ".gif";
     if (/webp/i.test(mime)) return ".webp";
     if (/pdf/i.test(mime))  return ".pdf";
+    if (/csv/i.test(mime))  return ".csv";
+    if (/text\/plain/i.test(mime)) return ".txt";
     return ".bin";
   }
 
@@ -1132,8 +1219,9 @@
     var maxMs    = limits.maxMs != null ? limits.maxMs : MEDIA_MAX_MS;
     var clock    = options.clock;
     var signal   = options.signal;
+    var origin   = mediaOrigin(options.root, options.origin);
     var started  = nowMs(clock);
-    var candidates = collectMediaFromMessages(thread && thread.messages);
+    var candidates;
     var seen  = {};
     var list  = [];
     var i;
@@ -1151,12 +1239,23 @@
     var size;
     var timedOut = false;
 
+    candidates = collectMediaFromMessages(thread && thread.messages)
+      .concat(
+        options.root
+          ? collectVisibleFileCards(options.root, origin, skippedItems)
+          : []
+      );
+
     function add(entry) {
       var href = entry && entry.url;
       if (!href || seen[href] || !isFetchableUrl(href)) {
         return;
       }
       seen[href] = true;
+      if (!isAllowedMediaUrl(href, origin)) {
+        skippedItems.push({ url: href, reason: "forbidden_endpoint" });
+        return;
+      }
       list.push(entry);
     }
 
@@ -1209,6 +1308,10 @@
       }
       item = list[i];
       url  = item.url;
+      if (!isAllowedMediaUrl(url, origin)) {
+        skippedItems.push({ url: url, reason: "forbidden_endpoint" });
+        continue;
+      }
       try {
         res = await fetchImpl(url, { credentials: "omit" });
         if (!res || !res.ok) {
@@ -1350,6 +1453,9 @@
         name = slugifyFilename(thread.title, thread.exportedAt) + ".md";
         blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
         saved = download(blob, name, doc);
+        if (saved && typeof saved.then === "function") {
+          saved = await saved;
+        }
         if (saved === false) {
           return fail("save-md", "download_denied", { filename: name, markdown: md });
         }
@@ -1394,6 +1500,8 @@
           limits: mediaLimits,
           clock : clock,
           signal: deps.signal,
+          root  : root,
+          origin: loc.origin,
         });
         if (media.cancelled && signalAborted(deps.signal)) {
           return fail("save-zip", "cancelled", {
@@ -1440,6 +1548,9 @@
         blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
         name = slugifyFilename(thread.title, thread.exportedAt) + ".zip";
         saved = download(blob, name, doc);
+        if (saved && typeof saved.then === "function") {
+          saved = await saved;
+        }
         if (saved === false) {
           return fail("save-zip", "download_denied", {
             filename : name,
@@ -1504,7 +1615,10 @@
     sanitizeMediaFilename     : sanitizeMediaFilename,
     collectVisibleThread      : collectVisibleThread,
     inspectExportSignals      : inspectExportSignals,
+    isForbiddenMediaPath      : isForbiddenMediaPath,
+    isAllowedMediaUrl         : isAllowedMediaUrl,
     collectMediaFromMessages  : collectMediaFromMessages,
+    collectVisibleFileCards   : collectVisibleFileCards,
     rewriteThreadMedia        : rewriteThreadMedia,
     copyText                  : copyText,
     triggerDownload           : triggerDownload,

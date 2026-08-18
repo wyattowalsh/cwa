@@ -87,6 +87,13 @@ describe("createExporter", () => {
           blob  : async () => new Blob(["PNG"], { type: "image/png" }),
         };
       }
+      if (href.includes("/files/")) {
+        return {
+          ok    : true,
+          status: 200,
+          blob  : async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+        };
+      }
       return { ok: false, status: 404, json: async () => ({}), blob: async () => new Blob([]) };
     });
     exporter = makeExporter();
@@ -141,12 +148,30 @@ describe("createExporter", () => {
       fetchImpl.mock.calls.every(([url, init]) => {
         const href = String(url);
         const creds = init && init.credentials;
-        if (href.includes("img-1.png")) {
+        if (href.includes("img-1.png") || href.includes("/files/")) {
           return creds === "omit";
         }
         return true;
       })
     ).toBe(true);
+  });
+
+  it("does not fetch a private endpoint linked from the visible main", async () => {
+    const link = document.createElement("a");
+    const forbiddenPath = "/backend-api/" + "conversation";
+    link.setAttribute("download", "private.json");
+    link.setAttribute("href", forbiddenPath);
+    link.textContent = "private";
+    document.querySelector("main").appendChild(link);
+
+    const result = await exporter.saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl.mock.calls.some(([url]) => String(url) === forbiddenPath)).toBe(false);
+    expect(result.skippedMedia).toContainEqual({
+      url   : forbiddenPath,
+      reason: "forbidden_endpoint",
+    });
   });
 
   it("zips locally generated chat.md, manifests, and visible media without conversation.json", async () => {
@@ -155,21 +180,21 @@ describe("createExporter", () => {
     expect(result.ok).toBe(true);
     expect(result.filename).toBe("cwa-widget-export-2026-08-18.zip");
     expect(result.includedJson).toBeUndefined();
-    expect(result.mediaCount).toBe(1);
+    expect(result.mediaCount).toBe(2);
     expect(result.formats).toEqual(["md", "zip"]);
     expect(result.files).toContain("chat.md");
     expect(result.files).toContain("MANIFEST.md");
     expect(result.files).toContain("manifest.json");
     expect(result.files).toContain("media/001-plot.png");
-    expect(result.files).not.toContain("conversation.json");
+    expect(result.files.some((name) => name.startsWith("media/") && name.indexOf("csv") !== -1 || name.indexOf("output") !== -1 || name.endsWith(".csv") || name.endsWith(".bin"))).toBe(true);
+    expect(result.manifestObject.media.workflow).toBe("visible-dom");
     expect(result.manifest).toContain("`unloaded_messages`");
     expect(result.manifest).not.toContain("conversation.json");
     expect(result.markdown).toContain("media/001-plot.png");
     expect(result.manifestObject.source.authority).toBe("observed-ui");
     expect(lastZip).toBeInstanceOf(Blob);
 
-    const zipFiles = Object.keys(new FakeZip().files);
-    expect(zipFiles).not.toContain("conversation.json");
+    expect(result.files).not.toContain("conversation.json");
 
     const mediaFetch = fetchImpl.mock.calls.find(([url]) => String(url).includes("img-1.png"));
     expect(mediaFetch).toBeTruthy();
@@ -313,17 +338,26 @@ describe("createExporter", () => {
   });
 
   it("returns duplicate while a ZIP is in flight", async () => {
-    let release;
-    fetchImpl.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        })
-    );
+    let releaseFirst;
+    let fetchCount = 0;
+    fetchImpl.mockImplementation(() => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({
+        ok    : true,
+        status: 200,
+        blob  : async () => new Blob(["media"], { type: "application/octet-stream" }),
+      });
+    });
+
     const first = exporter.saveZip();
     const second = await exporter.saveZip();
     expect(second).toMatchObject({ ok: false, error: "duplicate" });
-    release({
+    releaseFirst({
       ok    : true,
       status: 200,
       blob  : async () => new Blob(["PNG"], { type: "image/png" }),

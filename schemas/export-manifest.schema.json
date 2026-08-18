@@ -74,8 +74,10 @@
     "media": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["workflow"],
       "properties": {
         "included": { "type": "integer", "minimum": 0 },
+        "workflow": { "enum": ["visible-dom"] },
         "failed": {
           "type": "array",
           "items": {

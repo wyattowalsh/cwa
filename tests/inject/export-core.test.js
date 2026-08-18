@@ -245,4 +245,42 @@ describe("collectVisibleThread", () => {
     expect(signals.mediaSkipped).toBe(true);
     expect(signals.conversationJsonMissing).toBeUndefined();
   });
+
+  it("ignores nav and toolbar decoys while collecting the main file-card", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML("afterbegin", FIXTURE);
+    document.body.appendChild(wrap);
+
+    const cards = core.collectVisibleFileCards(document);
+
+    expect(cards).toEqual([
+      { url: "/files/abc", alt: "output.csv", kind: "file-card" },
+    ]);
+  });
+
+  it("returns no file cards when the root has no main", () => {
+    document.body.replaceChildren();
+    const link = document.createElement("a");
+    link.href = "/files/outside.csv";
+    link.download = "outside.csv";
+    document.body.appendChild(link);
+
+    expect(core.collectVisibleFileCards(document)).toEqual([]);
+  });
+
+  it("finds a file-card anchor whose data-testid is on the anchor itself", () => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const link = document.createElement("a");
+    link.setAttribute("data-testid", "file-card");
+    link.setAttribute("href", "/downloads/report.csv");
+    link.textContent = "report.csv";
+    main.appendChild(link);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main)).toEqual([
+      { url: "/downloads/report.csv", alt: "report.csv", kind: "file-card" },
+    ]);
+  });
 });
