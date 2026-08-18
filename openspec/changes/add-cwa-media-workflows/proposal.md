@@ -1,3 +1,3 @@
-# Change: add-cwa-media-workflows (docs only)
+# Change: add-cwa-media-workflows
 
-Not executed in Wave 1. Bounded visible-media ZIP inclusion in Wave 1 is the only media behavior until this change is implemented.
+Visible-DOM workflow: images in mounted turns plus file-card / download links under `main`, excluding nav/chrome. Same count/size/time caps and `credentials: "omit"`. Manifest `media.workflow` is `visible-dom`.

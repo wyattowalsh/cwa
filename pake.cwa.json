@@ -20,6 +20,13 @@
   "forceInternalNavigation": false,
   "inject": [
     "./inject/theme.css",
+    "./inject/selectors.js",
+    "./inject/scheduler.js",
+    "./inject/lifecycle.js",
+    "./inject/safe-mode.js",
+    "./inject/diagnostics.js",
+    "./inject/tools.js",
+    "./inject/native-bridge.js",
     "./inject/chrome.js",
     "./inject/vendor/jszip.min.js",
     "./inject/export-core.js",

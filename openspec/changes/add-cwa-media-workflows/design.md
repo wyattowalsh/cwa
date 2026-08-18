@@ -1,3 +1,3 @@
-# Design (stub)
+# Design: media workflows
 
-Media workflows stay opt-in, filename-safe, count/size/time capped, credentials omitted.
+`collectVisibleFileCards` walks `main` for `a[download]`, `/files/` hrefs, and file-card test ids. Failed fetches are recorded; Markdown still succeeds. No conversation JSON media harvest.

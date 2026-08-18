@@ -1,3 +1,3 @@
-# Design (stub)
+# Design: tool adapters
 
-Tool adapters run locally with explicit user intent. No default network to ChatGPT backend APIs.
+`CwaTools.run(id)` either dispatches existing export events or emits a redacted diagnostics snapshot. Unknown ids fail closed (`unknown_tool`).

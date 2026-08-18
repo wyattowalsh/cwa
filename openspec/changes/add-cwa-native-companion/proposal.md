@@ -1,3 +1,19 @@
-# Change: add-cwa-native-companion (Wave 2+, docs only)
+# Change: add-cwa-native-companion
 
-Not executed in the Wave 1 run. Reserved for a future native/Pake IPC companion so downloads, keychain, and filesystem can move out of the untrusted ChatGPT.com origin. See `CONTINUATION_PROMPT.md`.
+## Why
+
+Downloads currently use the untrusted ChatGPT.com origin Blob path. A optional page-world protocol lets a future Pake/Tauri host save files without enlarging ChatGPT network authority.
+
+## Requirements
+
+- Protocol `cwa.native.v1`
+- Host: `global.__cwaNative.saveFile({ filename, blob, mime })`
+- Missing host → `native_unavailable`; export falls back to `triggerDownload`
+- Payloads MUST NOT include cookies, Authorization, tokens, or conversation JSON
+- No sidecar binary and no dependency upgrade in this change
+
+#### Scenario: No host
+
+- **WHEN** `__cwaNative` is absent
+- **THEN** `saveFile` returns `{ ok: false, error: "native_unavailable" }`
+- **AND** Markdown/ZIP still use the browser download path
