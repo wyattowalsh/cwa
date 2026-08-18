@@ -1,0 +1,18 @@
+{
+  "name": "cwa",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "description": "cwa — ChatGPT Web App, a Pake wrapper for chatgpt.com",
+  "scripts": {
+    "pake:build": "pake --config pake.cwa.json --targets app",
+    "pake:install": "pake --config pake.cwa.json --targets app --install",
+    "test": "vitest run && node --test inject/chrome.test.js",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "happy-dom": "20.11.2",
+    "pake-cli": "3.15.7",
+    "vitest": "4.1.11"
+  }
+}

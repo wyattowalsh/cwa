@@ -1,0 +1,525 @@
+/* cwa-theme-sentinel:do-not-remove */
+/*
+ * cwa theme — Pake page-world CSS inject for chatgpt.com
+ *
+ * RE-INSERT STRATEGY (SPA / React hydration)
+ * ------------------------------------------
+ * Pake concatenates --inject files into custom.js and runs them as a
+ * document-start initialization_script. CSS usually lands as a <style>
+ * tag on <html>/<head>. ChatGPT is an SPA: client navigations do not
+ * re-run initialization_script, but React can detach head nodes.
+ *
+ * chrome.js is responsible for keeping this sheet alive:
+ *   1. Find a <style> or <link> whose cssText/text contains
+ *      "cwa-theme-sentinel" (this file) OR [data-cwa-theme].
+ *   2. Cache the cssText once.
+ *   3. Prefer document.adoptedStyleSheets (Constructable Stylesheet)
+ *      so wiping <head> does not drop tokens. Fallback: recreate
+ *      <style id="cwa-theme" data-cwa-theme="1"> with
+ *      textContent (no innerHTML — Trusted Types).
+ *   4. MutationObserver on document.documentElement re-runs ensure
+ *      after childList/subtree mutations and after pushState/replaceState
+ *      / popstate hooks.
+ *   5. Do not fetch theme.css from disk at runtime — WKWebView has no
+ *      file URL for the inject. Cache is the only recovery path.
+ *
+ * Selectors: role / landmark / data-* / attribute contains, never a
+ * single hashed Tailwind class. !important is limited to max-width
+ * unlocks, title-bar inset, and ChatGPT utility fights.
+ *
+ * Contrast (WCAG 2.1 AA): body text >= 4.5:1, UI/focus >= 3:1.
+ * Dark pairs below are ~9:1–16:1 for text; accent-on-dark ~12:1.
+ */
+
+:root {
+  --cwa-theme: 1;
+
+  /* Density + type scale — tweak without hunting utilities */
+  --cwa-type-scale: 1;
+  --cwa-space-scale: 1;
+  --cwa-font-size: calc(15px * var(--cwa-type-scale));
+  --cwa-line-height: 1.62;
+  --cwa-space: calc(8px * var(--cwa-space-scale));
+  --cwa-radius: 16px;
+  --cwa-thread-max: 72rem;
+
+  /* macOS overlay traffic lights (--hide-title-bar). Pake style.js
+   * pads some hashed layouts (~34px); ChatGPT's current shell needs
+   * an explicit sticky-header inset. 40px clears 12pt lights + gap. */
+  --cwa-titlebar-inset: 40px;
+
+  --cwa-sidebar-min: 200px;
+  --cwa-sidebar-max: 420px;
+  --cwa-minimap-width: 14px;
+  --cwa-z-chrome: 2147483000;
+
+  /* Dark default (pake.json darkMode + ChatGPT .dark) */
+  --cwa-bg: #14151f;
+  --cwa-surface: #1c1e2c;
+  --cwa-sidebar-bg: #17192a;
+  --cwa-composer-bg: #22243a;
+  --cwa-border: #3a4158;
+  --cwa-text: #f0f2f8;
+  --cwa-text-muted: #b8bfcf;
+  --cwa-accent: #5eead4;
+  --cwa-accent-fg: #073432;
+  --cwa-accent-warm: #f0b429;
+  --cwa-accent-cool: #7dd3fc;
+  --cwa-accent-violet: #a78bfa;
+  --cwa-user-bg: #2c3f73;
+  --cwa-user-fg: #f4f7ff;
+  --cwa-assistant-bg: #1b3330;
+  --cwa-assistant-fg: #e7f6f3;
+  --cwa-code-bg: #0f121c;
+  --cwa-code-fg: #e6edf7;
+  --cwa-danger: #fca5a5;
+  --cwa-focus: #7dd3fc;
+  --cwa-handle: #8b93a7;
+  --cwa-toolbar-bg: rgba(28, 30, 44, 0.92);
+  --cwa-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+html.light,
+html[data-theme="light"],
+body.light,
+.light {
+  --cwa-bg: #f4f1ea;
+  --cwa-surface: #fffdf8;
+  --cwa-sidebar-bg: #ebe4f4;
+  --cwa-composer-bg: #ffffff;
+  --cwa-border: #5c6378;
+  --cwa-text: #1a1c24;
+  --cwa-text-muted: #3e4658;
+  --cwa-accent: #0f766e;
+  --cwa-accent-fg: #f0fdfa;
+  --cwa-accent-warm: #92400e;
+  --cwa-accent-cool: #075985;
+  --cwa-accent-violet: #5b21b6;
+  --cwa-user-bg: #1e3a8a;
+  --cwa-user-fg: #f8fafc;
+  --cwa-assistant-bg: #d1fae5;
+  --cwa-assistant-fg: #064e3b;
+  --cwa-code-bg: #1e293b;
+  --cwa-code-fg: #f8fafc;
+  --cwa-danger: #991b1b;
+  --cwa-focus: #0369a1;
+  --cwa-handle: #4b5568;
+  --cwa-toolbar-bg: rgba(255, 253, 248, 0.94);
+  --cwa-shadow: 0 8px 24px rgba(26, 28, 36, 0.16);
+}
+
+@media (prefers-color-scheme: light) {
+  html:not(.dark):not([data-theme="dark"]) {
+    --cwa-bg: #f4f1ea;
+    --cwa-surface: #fffdf8;
+    --cwa-sidebar-bg: #ebe4f4;
+    --cwa-composer-bg: #ffffff;
+    --cwa-border: #5c6378;
+    --cwa-text: #1a1c24;
+    --cwa-text-muted: #3e4658;
+    --cwa-accent: #0f766e;
+    --cwa-accent-fg: #f0fdfa;
+    --cwa-accent-warm: #92400e;
+    --cwa-accent-cool: #075985;
+    --cwa-accent-violet: #5b21b6;
+    --cwa-user-bg: #1e3a8a;
+    --cwa-user-fg: #f8fafc;
+    --cwa-assistant-bg: #d1fae5;
+    --cwa-assistant-fg: #064e3b;
+    --cwa-code-bg: #1e293b;
+    --cwa-code-fg: #f8fafc;
+    --cwa-danger: #991b1b;
+    --cwa-focus: #0369a1;
+    --cwa-handle: #4b5568;
+    --cwa-toolbar-bg: rgba(255, 253, 248, 0.94);
+    --cwa-shadow: 0 8px 24px rgba(26, 28, 36, 0.16);
+  }
+}
+
+html {
+  color-scheme: dark;
+}
+
+html.light,
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ---- App shell ---- */
+
+body {
+  background-color: var(--cwa-bg) !important;
+  color: var(--cwa-text);
+}
+
+/* Overlay traffic lights: pad the two top columns, not <body>, so the
+ * conversation scroller still fills the viewport. */
+nav,
+aside,
+[data-testid="left-sidebar"],
+[data-testid="sidebar"],
+#stage-slideover-sidebar {
+  padding-top: var(--cwa-titlebar-inset) !important;
+  background-color: var(--cwa-sidebar-bg) !important;
+  color: var(--cwa-text);
+  border-right: 1px solid var(--cwa-border);
+}
+
+main > header,
+header.sticky,
+[class*="sticky"][class*="top-0"],
+main [class*="sticky"][class*="top"] {
+  padding-top: var(--cwa-titlebar-inset) !important;
+}
+
+/* ---- Sidebar restyle (stable-ish) ---- */
+
+nav a,
+aside a,
+nav [role="link"],
+nav button {
+  color: var(--cwa-text);
+}
+
+nav .text-token-text-secondary,
+aside .text-token-text-secondary,
+nav [class*="text-secondary"],
+nav [class*="text-muted"] {
+  color: var(--cwa-text-muted) !important;
+}
+
+nav [class*="hover"],
+aside [class*="hover"] {
+  border-radius: 10px;
+}
+
+/* ---- Conversation column + widescreen unlock ---- */
+
+:root,
+html,
+body,
+main {
+  --thread-content-max-width: var(--cwa-thread-max) !important;
+  --content-max-width: var(--cwa-thread-max) !important;
+  --composer-max-width: var(--cwa-thread-max) !important;
+}
+
+[class*="max-w-3xl"],
+[class*="max-w-prose"],
+[class*="max-w-[48rem]"],
+[class*="max-w-[40rem]"],
+[class*="max-w-[44rem]"],
+[class*="xl:max-w-"],
+[class*="md:max-w-"],
+[class*="lg:max-w-"],
+main .mx-auto[class*="text-base"],
+main [class*="prose"],
+[data-message-author-role] {
+  max-width: min(100%, var(--cwa-thread-max)) !important;
+}
+
+main [class*="mx-auto"] {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* ---- Smooth scrolling (conversation scroller, not html) ---- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .cwa-scroller,
+  main [class*="overflow-y"],
+  main [class*="overflow-auto"],
+  [class*="react-scroll-to-bottom"],
+  [data-testid="conversation-panel"] [class*="overflow"],
+  #thread {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cwa-scroller,
+  main [class*="overflow-y"],
+  main [class*="overflow-auto"],
+  [class*="react-scroll-to-bottom"],
+  html,
+  body {
+    scroll-behavior: auto !important;
+  }
+
+  .cwa-toolbar,
+  .cwa-palette,
+  .cwa-palette-backdrop,
+  .cwa-minimap-tick,
+  .cwa-sidebar-handle {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.cwa-scroller::-webkit-scrollbar,
+main [class*="overflow-y"]::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cwa-scroller::-webkit-scrollbar-thumb,
+main [class*="overflow-y"]::-webkit-scrollbar-thumb {
+  background: var(--cwa-border);
+  border-radius: 8px;
+}
+
+/* ---- Density / type on mounted messages ---- */
+
+[data-message-author-role] {
+  font-size: var(--cwa-font-size);
+  line-height: var(--cwa-line-height);
+}
+
+[data-message-author-role="user"] {
+  background-color: var(--cwa-user-bg) !important;
+  color: var(--cwa-user-fg) !important;
+  border-radius: var(--cwa-radius);
+  box-shadow: inset 3px 0 0 var(--cwa-accent-warm);
+  padding: calc(var(--cwa-space) * 1.25) calc(var(--cwa-space) * 1.75);
+}
+
+[data-message-author-role="assistant"] {
+  background-color: var(--cwa-assistant-bg) !important;
+  color: var(--cwa-assistant-fg) !important;
+  border-radius: var(--cwa-radius);
+  box-shadow: inset 3px 0 0 var(--cwa-accent);
+  padding: calc(var(--cwa-space) * 1.25) calc(var(--cwa-space) * 1.75);
+}
+
+[data-message-author-role="system"],
+[data-message-author-role="tool"] {
+  background-color: var(--cwa-surface) !important;
+  color: var(--cwa-text-muted) !important;
+  border-radius: var(--cwa-radius);
+  box-shadow: inset 3px 0 0 var(--cwa-accent-violet);
+}
+
+[data-message-author-role] pre,
+[data-message-author-role] code {
+  background-color: var(--cwa-code-bg) !important;
+  color: var(--cwa-code-fg) !important;
+}
+
+[data-message-author-role] a {
+  color: var(--cwa-accent-cool);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- Composer ---- */
+
+form:has(#prompt-textarea),
+form:has([data-testid*="composer" i]),
+form:has([id*="prompt-textarea" i]),
+[data-testid*="composer" i] {
+  background-color: var(--cwa-composer-bg) !important;
+  border: 1px solid var(--cwa-border) !important;
+  border-radius: calc(var(--cwa-radius) + 4px);
+  box-shadow: var(--cwa-shadow);
+}
+
+form:has(#prompt-textarea):focus-within,
+form:has([id*="prompt-textarea" i]):focus-within,
+[data-testid*="composer" i]:focus-within {
+  border-color: var(--cwa-accent) !important;
+  box-shadow: 0 0 0 2px var(--cwa-focus), var(--cwa-shadow);
+}
+
+#prompt-textarea,
+[id*="prompt-textarea" i],
+[data-testid*="composer" i] textarea,
+[data-testid*="composer" i] [contenteditable="true"] {
+  color: var(--cwa-text) !important;
+  background: transparent !important;
+  font-size: var(--cwa-font-size);
+  line-height: var(--cwa-line-height);
+}
+
+/* ---- Injected chrome widgets (styled here so re-adopt covers them) ---- */
+
+.cwa-toolbar {
+  position: fixed;
+  top: calc(var(--cwa-titlebar-inset) + 8px);
+  right: calc(var(--cwa-minimap-width) + 16px);
+  z-index: var(--cwa-z-chrome);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--cwa-border);
+  border-radius: 999px;
+  background: var(--cwa-toolbar-bg);
+  box-shadow: var(--cwa-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.cwa-toolbar button {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font: 600 12px/1.2 system-ui, -apple-system, sans-serif;
+  color: var(--cwa-accent-fg);
+  background: var(--cwa-accent);
+  cursor: pointer;
+}
+
+.cwa-toolbar button[data-cwa-action="palette"] {
+  color: var(--cwa-text);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--cwa-border);
+}
+
+.cwa-toolbar button:focus-visible,
+.cwa-sidebar-handle:focus-visible,
+.cwa-palette-item:focus-visible,
+.cwa-minimap:focus-visible,
+.cwa-palette-input:focus-visible {
+  outline: 2px solid var(--cwa-focus);
+  outline-offset: 2px;
+}
+
+.cwa-toolbar button:hover {
+  filter: brightness(1.08);
+}
+
+.cwa-sidebar-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: calc(var(--cwa-z-chrome) - 10);
+  width: 6px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--cwa-handle);
+  opacity: 0.55;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.cwa-sidebar-handle:hover,
+.cwa-sidebar-handle[data-active="true"] {
+  opacity: 1;
+  background: var(--cwa-accent);
+}
+
+.cwa-sidebar-handle[hidden] {
+  display: none;
+}
+
+.cwa-minimap {
+  position: fixed;
+  top: var(--cwa-titlebar-inset);
+  right: 0;
+  bottom: 0;
+  z-index: calc(var(--cwa-z-chrome) - 20);
+  width: var(--cwa-minimap-width);
+  overflow: hidden;
+  border-left: 1px solid var(--cwa-border);
+  background: var(--cwa-surface);
+  cursor: pointer;
+}
+
+.cwa-minimap-tick {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--cwa-text-muted);
+  pointer-events: none;
+}
+
+.cwa-minimap-tick[data-role="user"] {
+  background: var(--cwa-accent-warm);
+}
+
+.cwa-minimap-tick[data-role="assistant"] {
+  background: var(--cwa-accent);
+}
+
+.cwa-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--cwa-z-chrome) + 1);
+  background: rgba(8, 10, 18, 0.55);
+}
+
+.cwa-palette-backdrop[hidden] {
+  display: none;
+}
+
+.cwa-palette {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  z-index: calc(var(--cwa-z-chrome) + 2);
+  width: min(520px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  border: 1px solid var(--cwa-border);
+  border-radius: 16px;
+  background: var(--cwa-surface);
+  color: var(--cwa-text);
+  box-shadow: var(--cwa-shadow);
+}
+
+.cwa-palette[hidden] {
+  display: none;
+}
+
+.cwa-palette-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--cwa-border);
+  border-radius: 16px 16px 0 0;
+  padding: 14px 16px;
+  font: 16px/1.4 system-ui, -apple-system, sans-serif;
+  color: var(--cwa-text);
+  background: transparent;
+}
+
+.cwa-palette-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  list-style: none;
+}
+
+.cwa-palette-item {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  font: 14px/1.35 system-ui, -apple-system, sans-serif;
+  color: var(--cwa-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.cwa-palette-item[aria-selected="true"],
+.cwa-palette-item:hover {
+  background: var(--cwa-composer-bg);
+}
+
+.cwa-palette-hint {
+  margin: 0;
+  padding: 8px 16px 12px;
+  color: var(--cwa-text-muted);
+  font: 12px/1.4 system-ui, -apple-system, sans-serif;
+}

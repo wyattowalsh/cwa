@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tw93/Pake/main/schema/pake.schema.json",
+  "url": "https://chatgpt.com",
+  "name": "cwa",
+  "title": "cwa",
+  "identifier": "com.wyattowalsh.cwa",
+  "hideTitleBar": true,
+  "darkMode": true,
+  "enableFind": true,
+  "showSystemTray": true,
+  "hideOnClose": true,
+  "width": 1400,
+  "height": 900,
+  "minWidth": 880,
+  "minHeight": 640,
+  "activationShortcut": "CmdOrControl+Shift+Space",
+  "enableDragDrop": true,
+  "microphone": true,
+  "safeDomain": "chatgpt.com,auth.openai.com,oaistatic.com,openai.com",
+  "forceInternalNavigation": false,
+  "inject": [
+    "./inject/theme.css",
+    "./inject/chrome.js",
+    "./inject/vendor/jszip.min.js",
+    "./inject/export-core.js",
+    "./inject/export.js"
+  ],
+  "targets": "app"
+}
