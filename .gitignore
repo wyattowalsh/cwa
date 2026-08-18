@@ -147,6 +147,11 @@ vite.config.ts.timestamp-*
 *.dmg
 .DS_Store
 
+# Pake / Linux build artifacts
+*.deb
+*.AppImage
+*.rpm
+
 # Local planning bundle artifacts (do not ship)
 cwa-planning-spec-bundle-*/
 *.zip
