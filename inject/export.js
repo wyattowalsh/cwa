@@ -53,6 +53,31 @@
     global.__cwaExportBooted = true;
 
     var inflight = Object.create(null);
+    async function downloadWithCompanion(blob, filename, doc) {
+      var bridge;
+      var result;
+      try {
+        bridge = global.CwaNativeBridge;
+        if (bridge && typeof bridge.saveFile === "function") {
+          result = await bridge.saveFile({
+            filename: filename,
+            blob    : blob,
+            mime    : blob && blob.type,
+          });
+          if (result && result.ok) {
+            return true;
+          }
+        }
+      } catch (err) {
+        // Native companion failures must fall back to the browser download.
+      }
+      try {
+        return await core.triggerDownload(blob, filename, doc);
+      } catch (err) {
+        return false;
+      }
+    }
+
     var exporter = core.createExporter({
       window    : global,
       document  : global.document,
@@ -60,7 +85,7 @@
       fetch     : bindFetch(),
       clipboard : global.navigator && global.navigator.clipboard,
       JSZip     : global.JSZip,
-      download  : core.triggerDownload,
+      download  : downloadWithCompanion,
     });
 
     global.CwaExport = exporter;
@@ -84,11 +109,6 @@
     global.addEventListener("cwa:copy", onCopy);
     global.addEventListener("cwa:save-md", onSaveMd);
     global.addEventListener("cwa:save-zip", onSaveZip);
-    if (global.document && global.document.addEventListener) {
-      global.document.addEventListener("cwa:copy", onCopy);
-      global.document.addEventListener("cwa:save-md", onSaveMd);
-      global.document.addEventListener("cwa:save-zip", onSaveZip);
-    }
   }
 
   boot();
