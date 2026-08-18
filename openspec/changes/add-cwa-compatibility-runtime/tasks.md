@@ -14,5 +14,5 @@ Status legend: `[ ]` pending · `[x]` implementation artifact present · command
 - [x] **TASK-025** Integrate the registry, scheduler, lifecycle, and safe-mode APIs into `inject/chrome.js` so SPA rescans are coalesced and noncritical selector misses degrade without forcing safe mode.
 - [x] **TASK-026** Keep toolbar, palette, Copy, Markdown, and ZIP event surfaces available in safe mode while skipping selector-dependent chrome work such as sidebar resize and minimap rebuild.
 - [x] **TASK-027** Load compatibility modules before `chrome.js` in both Pake configs and add focused synthetic-DOM/unit coverage for selector safety, scheduler coalescing, lifecycle transitions, safe-mode strikes, diagnostics redaction, and chrome integration.
-- [ ] **TASK-028** Run `pnpm test`, `python3 scripts/validate_planning.py`, `python3 scripts/validate_planning.py --runtime`, and the forbidden-endpoint ripgrep review. Replace all Wave 2 TBD placeholders only with executed results.
-- [ ] **TASK-029** Update the Wave 2 evidence table and recommendation after TASK-028. Do not claim PASS or advance the gate while validation evidence is TBD.
+- [x] **TASK-028** Run `pnpm test`, `python3 scripts/validate_planning.py`, `python3 scripts/validate_planning.py --runtime`, and the forbidden-endpoint ripgrep review. Replace all Wave 2 TBD placeholders only with executed results.
+- [x] **TASK-029** Update the Wave 2 evidence table and recommendation after TASK-028. Do not claim PASS or advance the gate while validation evidence is TBD.

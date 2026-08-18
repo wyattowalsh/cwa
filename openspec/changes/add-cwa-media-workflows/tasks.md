@@ -14,5 +14,5 @@ Status legend: `[ ]` pending · `[x]` implementation artifact present · command
 - [x] **TASK-055** Set `manifest.media.workflow` to `visible-dom` and retain included, skipped, and failed media provenance.
 - [x] **TASK-056** Record failed or skipped file-card fetches without failing Markdown generation or adding `conversation.json` to the archive.
 - [x] **TASK-057** Add synthetic-DOM and ZIP coverage for main-scoped card discovery, chrome/nav exclusion, URL deduplication, `visible-dom` provenance, and nonfatal failures.
-- [ ] **TASK-058** Run `pnpm test`, `python3 scripts/validate_planning.py`, `python3 scripts/validate_planning.py --runtime`, and the forbidden-endpoint ripgrep review. Replace all Wave 5 TBD placeholders only with executed results.
-- [ ] **TASK-059** Update the Wave 5 evidence table and recommendation after TASK-058. Do not claim PASS or broader-than-visible media coverage while validation evidence is TBD.
+- [x] **TASK-058** Run `pnpm test`, `python3 scripts/validate_planning.py`, `python3 scripts/validate_planning.py --runtime`, and the forbidden-endpoint ripgrep review. Replace all Wave 5 TBD placeholders only with executed results.
+- [x] **TASK-059** Update the Wave 5 evidence table and recommendation after TASK-058. Do not claim PASS or broader-than-visible media coverage while validation evidence is TBD.

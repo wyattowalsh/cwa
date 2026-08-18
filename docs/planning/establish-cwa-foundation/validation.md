@@ -22,7 +22,7 @@ rg -n "/backend-api/conversation|/api/auth/session" inject tests openspec docs s
 - Local tools: `inject/tools.js`
 - Visible-DOM media workflow: `collectVisibleFileCards` and manifest/fetch integration in `inject/export-core.js`
 
-Validation TASK-028, TASK-038, TASK-048, and TASK-058 remain pending until the command placeholders in `PLANS.md` are replaced with executed results.
+Validation TASK-028, TASK-038, TASK-048, and TASK-058 are recorded with executed results in `PLANS.md`.
 
 ## Out of scope this run
 
