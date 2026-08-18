@@ -91,11 +91,28 @@
     return best;
   }
 
+  function formatExportStatus(detail) {
+    detail = detail || {};
+    var code = detail.code || (detail.ok ? "ok" : "error");
+    if (code === "ok" && detail.action === "copy") return "Copied visible thread";
+    if (code === "ok" && detail.action === "save-md") return "Saved Markdown";
+    if (code === "ok" && detail.action === "save-zip") return "Saved ZIP";
+    if (code === "partial") return "Saved ZIP with media limitations";
+    if (code === "duplicate") return "Export already in progress";
+    if (code === "cancelled") return "Export cancelled";
+    if (code === "jszip_missing") return "ZIP unavailable (JSZip missing)";
+    if (code === "clipboard_denied") return "Clipboard permission denied";
+    if (code === "download_denied") return "Download blocked";
+    if (code === "unsupported_route") return "Nothing to export on this page";
+    return detail.message || code;
+  }
+
   var api = {
     clampSidebarWidth: clampSidebarWidth,
     mapMinimapYToIndex: mapMinimapYToIndex,
     offsetToMinimapY: offsetToMinimapY,
     nearestOffsetIndex: nearestOffsetIndex,
+    formatExportStatus: formatExportStatus,
     SIDEBAR_MIN: SIDEBAR_MIN,
     SIDEBAR_MAX: SIDEBAR_MAX,
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT,
@@ -755,6 +772,34 @@
     (document.body || document.documentElement).appendChild(dialog);
   }
 
+  function mountExportStatus() {
+    var node = document.getElementById(NS + "-export-status");
+    if (!node) {
+      node = el("div", {
+        id: NS + "-export-status",
+        className: NS + "-export-status",
+        role: "status",
+        "aria-live": "polite",
+        "aria-atomic": "true",
+      });
+      node.hidden = true;
+      (document.body || document.documentElement).appendChild(node);
+    } else if (!node.isConnected) {
+      (document.body || document.documentElement).appendChild(node);
+    }
+    return node;
+  }
+
+  function onExportStatus(event) {
+    var node = mountExportStatus();
+    var detail = (event && event.detail) || {};
+    var text = formatExportStatus(detail);
+    node.textContent = text;
+    node.setAttribute("data-ok", detail.ok ? "true" : "false");
+    node.setAttribute("data-code", detail.code || "");
+    node.hidden = !text;
+  }
+
   function mountToolbar() {
     var bar = document.getElementById(NS + "-toolbar");
     if (bar && bar.isConnected) return bar;
@@ -859,6 +904,7 @@
     mountToolbar();
     mountPalette();
     mountMinimap();
+    mountExportStatus();
     syncSidebar();
     scheduleMinimap();
   }
@@ -904,10 +950,13 @@
     mountToolbar();
     mountPalette();
     mountMinimap();
+    mountExportStatus();
     syncSidebar();
     bindObservers();
     hookHistory(onSpaNavigate);
     window.addEventListener("keydown", onGlobalKeyDown, true);
+    window.addEventListener("cwa:export-status", onExportStatus);
+    document.addEventListener("cwa:export-status", onExportStatus);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) onSpaNavigate();
     });

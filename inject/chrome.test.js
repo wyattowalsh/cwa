@@ -13,6 +13,7 @@ const {
   SIDEBAR_MAX,
   SIDEBAR_DEFAULT,
   EVENTS,
+  formatExportStatus,
 } = chrome;
 
 test("clampSidebarWidth clamps to 200–420 and rounds", () => {
@@ -84,6 +85,17 @@ test("exports the toolbar events export.js should listen for", () => {
   assert.equal(EVENTS.copy, "cwa:copy");
   assert.equal(EVENTS.saveMd, "cwa:save-md");
   assert.equal(EVENTS.saveZip, "cwa:save-zip");
+});
+
+test("formatExportStatus covers copy, zip, and denial codes", () => {
+  assert.equal(formatExportStatus({ action: "copy", ok: true, code: "ok" }), "Copied visible thread");
+  assert.equal(
+    formatExportStatus({ action: "save-zip", ok: true, code: "partial" }),
+    "Saved ZIP with media limitations"
+  );
+  assert.equal(formatExportStatus({ ok: false, code: "jszip_missing" }), "ZIP unavailable (JSZip missing)");
+  assert.equal(formatExportStatus({ ok: false, code: "clipboard_denied" }), "Clipboard permission denied");
+  assert.equal(formatExportStatus({ ok: false, code: "duplicate" }), "Export already in progress");
 });
 
 test("requiring chrome.js in node does not boot DOM chrome", () => {

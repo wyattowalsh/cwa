@@ -56,16 +56,21 @@
   for (var gi = 0; gi < INHERENT_GAPS.length; gi += 1) {
     GAP_INDEX[INHERENT_GAPS[gi].id] = INHERENT_GAPS[gi];
   }
-  GAP_INDEX.conversation_json_unavailable = {
-    id    : "conversation_json_unavailable",
-    title : "conversation.json unavailable",
-    detail: "Same-origin fetch of the current conversation JSON failed or was skipped.",
-  };
   GAP_INDEX.media_fetch_failed = {
     id    : "media_fetch_failed",
     title : "Media fetch failed",
-    detail: "One or more image/file URLs could not be fetched as blobs.",
+    detail: "One or more visible image/file URLs could not be fetched as blobs.",
   };
+  GAP_INDEX.media_skipped = {
+    id    : "media_skipped",
+    title : "Media skipped",
+    detail: "Some visible media were omitted because of count, size, or time caps.",
+  };
+
+  var MEDIA_MAX_FILES       = 40;
+  var MEDIA_MAX_BYTES_EACH  = 8 * 1024 * 1024;
+  var MEDIA_MAX_BYTES_TOTAL = 25 * 1024 * 1024;
+  var MEDIA_MAX_MS          = 8000;
 
   var LANGUAGE_RE = /^[A-Za-z0-9_+-]+$/;
   var UUID_RE     = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
@@ -246,8 +251,8 @@
     if (signals.deepResearchPanels)        add("deep_research_panels");
     if (signals.codeInterpreterFiles)      add("code_interpreter_files");
     if (signals.hiddenThinking)            add("hidden_thinking");
-    if (signals.conversationJsonMissing)   add("conversation_json_unavailable");
     if (signals.mediaFetchFailed)          add("media_fetch_failed");
+    if (signals.mediaSkipped)              add("media_skipped");
 
     return {
       detected: detected,
@@ -259,16 +264,20 @@
     return "- **" + item.title + "** (`" + item.id + "`): " + item.detail;
   }
 
+  function mediaListBlock(items) {
+    if (!items || !items.length) {
+      return "- None";
+    }
+    return items.map(function (item) {
+      return "- `" + (item.url || "") + "` — " + (item.reason || "failed");
+    }).join("\n");
+  }
+
   function buildManifestMarkdown(input) {
     input = input || {};
     var included = input.included || {};
     var gaps     = input.gaps || detectExportGaps({});
     var mediaN   = included.mediaCount == null ? 0 : included.mediaCount;
-    var jsonLine = included.conversationJson
-      ? "- `conversation.json` — same-origin fetch of the **current** conversation succeeded"
-      : "- `conversation.json` — omitted (" +
-        (input.conversationFetchError || "not fetched") +
-        ")";
     var detectedBlock = (gaps.detected && gaps.detected.length)
       ? gaps.detected.map(yamlBullet).join("\n")
       : "- None flagged for this snapshot (inherent limitations below still apply).";
@@ -278,6 +287,8 @@
       "# Visible-thread export manifest",
       "",
       "This archive is a **partial snapshot of the currently visible chat**, not an exhaustive dump of your ChatGPT account.",
+      "",
+      "Authority: `observed-ui` / `local-cwa`. Private provider conversation JSON is not fetched or stored.",
       "",
       "For a full account archive, use **ChatGPT → Settings → Data Controls → Export data**.",
       OFFICIAL_EXPORT_HELP,
@@ -289,8 +300,14 @@
       "",
       "## Included",
       "- `chat.md` — visible user/assistant turns (and visible thinking as blockquotes)",
-      jsonLine,
-      "- `media/` — " + String(mediaN) + " file(s) fetched as blobs",
+      "- `manifest.json` — machine-readable provenance for this snapshot",
+      "- `media/` — " + String(mediaN) + " visible file(s) fetched as blobs (`credentials: omit`)",
+      "",
+      "## Media failures",
+      mediaListBlock(input.failedMedia),
+      "",
+      "## Media skipped (caps)",
+      mediaListBlock(input.skippedMedia),
       "",
       "## Detected gaps",
       detectedBlock,
@@ -299,6 +316,55 @@
       inherentBlock,
       "",
     ].join("\n");
+  }
+
+  function buildManifestObject(input) {
+    input = input || {};
+    var included = input.included || {};
+    var gaps     = input.gaps || detectExportGaps({});
+    var files    = ["chat.md", "MANIFEST.md", "manifest.json"].concat(input.mediaFiles || []);
+    var seen     = {};
+    var limitations = [];
+    function addLimitation(item, detected) {
+      if (!item || seen[item.id]) {
+        return;
+      }
+      seen[item.id] = true;
+      limitations.push({
+        id      : item.id,
+        title   : item.title,
+        detail  : item.detail,
+        detected: Boolean(detected),
+      });
+    }
+    (gaps.inherent || INHERENT_GAPS).forEach(function (item) {
+      var flagged = (gaps.detected || []).some(function (hit) {
+        return hit.id === item.id;
+      });
+      addLimitation(item, flagged);
+    });
+    (gaps.detected || []).forEach(function (item) {
+      addLimitation(item, true);
+    });
+    return {
+      schema     : "cwa.export-manifest.v1",
+      product    : "cwa",
+      source     : {
+        authority: "observed-ui",
+        url      : input.url || "",
+        title    : input.title || "",
+      },
+      exportedAt : input.exportedAt || "",
+      formats    : ["md", "zip"],
+      files      : files,
+      limitations: limitations,
+      media      : {
+        included: included.mediaCount == null ? 0 : included.mediaCount,
+        failed  : input.failedMedia || [],
+        skipped : input.skippedMedia || [],
+      },
+      officialExport: OFFICIAL_EXPORT_HELP,
+    };
   }
 
   function parseConversationIdFromUrl(href) {
@@ -321,9 +387,11 @@
     return loose ? loose[1] : null;
   }
 
-  function conversationRequestUrl(origin, conversationId) {
-    var base = String(origin || "").replace(/\/$/, "");
-    return base + "/backend-api/conversation/" + encodeURIComponent(conversationId);
+  function isSupportedExportRoute(href, messageCount) {
+    if ((messageCount || 0) > 0) {
+      return true;
+    }
+    return Boolean(parseConversationIdFromUrl(href));
   }
 
   function slugifyFilename(title, exportedAt) {
@@ -337,25 +405,6 @@
       slug = "chat";
     }
     return "cwa-" + slug + "-" + date;
-  }
-
-  function countConversationJsonMessages(data) {
-    if (!data || typeof data !== "object" || !data.mapping || typeof data.mapping !== "object") {
-      return 0;
-    }
-    var keys = Object.keys(data.mapping);
-    var n    = 0;
-    var i;
-    var msg;
-    var role;
-    for (i = 0; i < keys.length; i += 1) {
-      msg  = data.mapping[keys[i]] && data.mapping[keys[i]].message;
-      role = msg && msg.author && msg.author.role;
-      if (role === "user" || role === "assistant") {
-        n += 1;
-      }
-    }
-    return n;
   }
 
   function conversationTitle(doc) {
@@ -859,21 +908,19 @@
 
   function inspectExportSignals(root, extras) {
     extras = extras || {};
-    var jsonCount = extras.jsonMessageCount || 0;
-    var domCount  = extras.domMessageCount || 0;
-    var unloaded  = jsonCount > 0 && jsonCount > domCount;
+    var unloaded = false;
     if (root && root.querySelector &&
         root.querySelector('[data-testid="scroll-to-previous"], [data-testid="conversation-scroll-up"]')) {
       unloaded = true;
     }
     return {
-      unloadedMessages       : Boolean(unloaded),
-      closedCanvases         : root ? hasClosedCanvas(root) : false,
-      deepResearchPanels     : root ? hasDeepResearchGap(root) : false,
-      codeInterpreterFiles   : root ? hasUnfetchedFiles(root) : false,
-      hiddenThinking         : root ? hasHiddenThinking(root) : false,
-      conversationJsonMissing: !extras.conversationJson,
-      mediaFetchFailed       : (extras.failedMedia || 0) > 0,
+      unloadedMessages     : Boolean(unloaded),
+      closedCanvases       : root ? hasClosedCanvas(root) : false,
+      deepResearchPanels   : root ? hasDeepResearchGap(root) : false,
+      codeInterpreterFiles : root ? hasUnfetchedFiles(root) : false,
+      hiddenThinking       : root ? hasHiddenThinking(root) : false,
+      mediaFetchFailed     : (extras.failedMedia || 0) > 0,
+      mediaSkipped         : (extras.skippedMedia || 0) > 0,
     };
   }
 
@@ -899,51 +946,6 @@
     return out;
   }
 
-  function collectMediaFromConversationJson(data) {
-    var out = [];
-    var keys;
-    var i;
-    var j;
-    var node;
-    var msg;
-    var parts;
-    var part;
-    var atts;
-    var att;
-    if (!data || !data.mapping) {
-      return out;
-    }
-    keys = Object.keys(data.mapping);
-    for (i = 0; i < keys.length; i += 1) {
-      node  = data.mapping[keys[i]];
-      msg   = node && node.message;
-      parts = msg && msg.content && msg.content.parts;
-      if (parts) {
-        for (j = 0; j < parts.length; j += 1) {
-          part = parts[j];
-          if (part && typeof part === "object") {
-            if (typeof part.asset_pointer === "string" && isFetchableUrl(part.asset_pointer)) {
-              out.push({ url: part.asset_pointer, alt: "asset" });
-            }
-            if (typeof part.image_url === "string") {
-              out.push({ url: part.image_url, alt: "image" });
-            }
-          }
-        }
-      }
-      atts = msg && msg.metadata && msg.metadata.attachments;
-      if (atts) {
-        for (j = 0; j < atts.length; j += 1) {
-          att = atts[j];
-          if (att && att.url) {
-            out.push({ url: att.url, alt: att.name || "attachment" });
-          }
-        }
-      }
-    }
-    return out;
-  }
-
   function extensionFromNameOrType(url, mime) {
     var match = String(url).match(/\.(png|jpe?g|gif|webp|svg|pdf|txt|csv|json|md|zip)(?:\?|$)/i);
     if (match) {
@@ -963,8 +965,60 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
+      .replace(/\.\./g, "")
       .slice(0, 32);
     return slug || "file";
+  }
+
+  function sanitizeMediaFilename(index, alt, url, mime) {
+    var fromAlt = safeMediaBase(alt);
+    var fromUrl = "file";
+    var path;
+    var slash;
+    var seg;
+    try {
+      path  = String(url || "").split("?")[0].split("#")[0];
+      slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+      seg   = slash >= 0 ? path.slice(slash + 1) : path;
+      fromUrl = safeMediaBase(seg);
+    } catch (err) {
+      fromUrl = "file";
+    }
+    var base = fromAlt !== "file" ? fromAlt : fromUrl;
+    if (!base || base.indexOf("..") !== -1) {
+      base = "file";
+    }
+    base = String(base).replace(/[\\/]/g, "");
+    var ext  = extensionFromNameOrType(url, mime);
+    var name = String(index + 1).padStart(3, "0") + "-" + base + ext;
+    return name.replace(/\.\./g, "").replace(/[\\/]/g, "-");
+  }
+
+  function nowMs(clock) {
+    if (clock && typeof clock.nowMs === "function") {
+      return clock.nowMs();
+    }
+    return Date.now();
+  }
+
+  function blobSize(content) {
+    if (!content) {
+      return 0;
+    }
+    if (typeof content.size === "number") {
+      return content.size;
+    }
+    if (typeof content.byteLength === "number") {
+      return content.byteLength;
+    }
+    if (typeof content.length === "number") {
+      return content.length;
+    }
+    return 0;
+  }
+
+  function signalAborted(signal) {
+    return Boolean(signal && signal.aborted);
   }
 
   function rewriteThreadMedia(thread, rewrites) {
@@ -1053,73 +1107,33 @@
 
   function emitStatus(deps, detail) {
     var win = deps && deps.window;
+    var doc = deps && deps.document;
     var Ev;
-    if (!win || typeof win.dispatchEvent !== "function") {
-      return;
-    }
-    Ev = win.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+    var event;
+    Ev = (win && win.CustomEvent) || (typeof CustomEvent === "function" ? CustomEvent : null);
     if (!Ev) {
       return;
     }
-    win.dispatchEvent(new Ev("cwa:export-status", { detail: detail }));
-  }
-
-  async function readSameOriginAccessToken(fetchImpl, origin) {
-    var res;
-    var data;
-    try {
-      res = await fetchImpl(String(origin || "").replace(/\/$/, "") + "/api/auth/session", {
-        credentials: "same-origin",
-        headers    : { Accept: "application/json" },
-      });
-      if (!res || !res.ok) {
-        return null;
-      }
-      data = await res.json();
-      return data && typeof data.accessToken === "string" ? data.accessToken : null;
-    } catch (err) {
-      return null;
+    event = new Ev("cwa:export-status", { bubbles: true, detail: detail });
+    if (win && typeof win.dispatchEvent === "function") {
+      win.dispatchEvent(event);
+    }
+    if (doc && typeof doc.dispatchEvent === "function" && doc !== win) {
+      doc.dispatchEvent(new Ev("cwa:export-status", { bubbles: true, detail: detail }));
     }
   }
 
-  async function fetchCurrentConversationJson(fetchImpl, origin, conversationId) {
-    var url = conversationRequestUrl(origin, conversationId);
-    var res;
-    var token;
-    try {
-      res = await fetchImpl(url, {
-        method     : "GET",
-        credentials: "same-origin",
-        headers    : { Accept: "application/json" },
-      });
-      if (res && res.ok) {
-        return { ok: true, data: await res.json() };
-      }
-      if (res && (res.status === 401 || res.status === 403)) {
-        token = await readSameOriginAccessToken(fetchImpl, origin);
-        if (token) {
-          res = await fetchImpl(url, {
-            method     : "GET",
-            credentials: "same-origin",
-            headers    : {
-              Accept       : "application/json",
-              Authorization: "Bearer " + token,
-            },
-          });
-          if (res && res.ok) {
-            return { ok: true, data: await res.json() };
-          }
-        }
-      }
-      return { ok: false, reason: "http_" + (res && res.status ? res.status : "0") };
-    } catch (err) {
-      return { ok: false, reason: "network" };
-    }
-  }
-
-  async function collectAndFetchMedia(thread, json, fetchImpl) {
-    var candidates = collectMediaFromMessages(thread.messages)
-      .concat(collectMediaFromConversationJson(json));
+  async function collectAndFetchMedia(thread, fetchImpl, options) {
+    options = options || {};
+    var limits = options.limits || {};
+    var maxFiles = limits.maxFiles != null ? limits.maxFiles : MEDIA_MAX_FILES;
+    var maxEach  = limits.maxBytesEach != null ? limits.maxBytesEach : MEDIA_MAX_BYTES_EACH;
+    var maxTotal = limits.maxBytesTotal != null ? limits.maxBytesTotal : MEDIA_MAX_BYTES_TOTAL;
+    var maxMs    = limits.maxMs != null ? limits.maxMs : MEDIA_MAX_MS;
+    var clock    = options.clock;
+    var signal   = options.signal;
+    var started  = nowMs(clock);
+    var candidates = collectMediaFromMessages(thread && thread.messages);
     var seen  = {};
     var list  = [];
     var i;
@@ -1128,11 +1142,14 @@
     var files       = [];
     var rewrites    = {};
     var fetchedUrls = [];
-    var failed      = 0;
+    var failedItems = [];
+    var skippedItems = [];
+    var totalBytes  = 0;
     var res;
     var content;
-    var ext;
     var name;
+    var size;
+    var timedOut = false;
 
     function add(entry) {
       var href = entry && entry.url;
@@ -1146,32 +1163,88 @@
     for (i = 0; i < candidates.length; i += 1) {
       add(candidates[i]);
     }
-    if (list.length > 40) {
-      list = list.slice(0, 40);
+    if (list.length > maxFiles) {
+      for (i = maxFiles; i < list.length; i += 1) {
+        skippedItems.push({ url: list[i].url, reason: "count_cap" });
+      }
+      list = list.slice(0, maxFiles);
     }
     if (!fetchImpl) {
-      return { files: files, rewrites: rewrites, failed: 0, fetchedUrls: fetchedUrls };
+      for (i = 0; i < list.length; i += 1) {
+        skippedItems.push({ url: list[i].url, reason: "no_fetch" });
+      }
+      return {
+        files       : files,
+        rewrites    : rewrites,
+        failed      : failedItems.length,
+        skipped     : skippedItems.length,
+        failedItems : failedItems,
+        skippedItems: skippedItems,
+        fetchedUrls : fetchedUrls,
+        cancelled   : false,
+      };
     }
     for (i = 0; i < list.length; i += 1) {
+      if (signalAborted(signal)) {
+        for (; i < list.length; i += 1) {
+          skippedItems.push({ url: list[i].url, reason: "cancelled" });
+        }
+        return {
+          files       : files,
+          rewrites    : rewrites,
+          failed      : failedItems.length,
+          skipped     : skippedItems.length,
+          failedItems : failedItems,
+          skippedItems: skippedItems,
+          fetchedUrls : fetchedUrls,
+          cancelled   : true,
+        };
+      }
+      if (nowMs(clock) - started > maxMs) {
+        timedOut = true;
+        for (; i < list.length; i += 1) {
+          skippedItems.push({ url: list[i].url, reason: "time_cap" });
+        }
+        break;
+      }
       item = list[i];
       url  = item.url;
       try {
-        res = await fetchImpl(url, { credentials: "include" });
+        res = await fetchImpl(url, { credentials: "omit" });
         if (!res || !res.ok) {
-          failed += 1;
+          failedItems.push({ url: url, reason: "http_" + (res && res.status ? res.status : "0") });
           continue;
         }
         content = await res.blob();
-        ext     = extensionFromNameOrType(url, content && content.type);
-        name    = String(i + 1).padStart(3, "0") + "-" + safeMediaBase(item.alt || "image") + ext;
+        size    = blobSize(content);
+        if (size > maxEach) {
+          failedItems.push({ url: url, reason: "too_large" });
+          continue;
+        }
+        if (totalBytes + size > maxTotal) {
+          skippedItems.push({ url: url, reason: "size_cap" });
+          continue;
+        }
+        name = sanitizeMediaFilename(files.length, item.alt || "image", url, content && content.type);
         files.push({ name: name, content: content, url: url });
         rewrites[url] = "media/" + name;
         fetchedUrls.push(url);
+        totalBytes += size;
       } catch (err) {
-        failed += 1;
+        failedItems.push({ url: url, reason: "network" });
       }
     }
-    return { files: files, rewrites: rewrites, failed: failed, fetchedUrls: fetchedUrls };
+    return {
+      files       : files,
+      rewrites    : rewrites,
+      failed      : failedItems.length,
+      skipped     : skippedItems.length,
+      failedItems : failedItems,
+      skippedItems: skippedItems,
+      fetchedUrls : fetchedUrls,
+      cancelled   : false,
+      timedOut    : timedOut,
+    };
   }
 
   function createExporter(deps) {
@@ -1184,6 +1257,8 @@
     var clock      = deps.clock || { now: function () { return new Date().toISOString(); } };
     var download   = deps.download || triggerDownload;
     var root       = deps.root || doc;
+    var inflight   = Object.create(null);
+    var mediaLimits = deps.mediaLimits || {};
 
     function snapshot(extra) {
       extra = extra || {};
@@ -1195,102 +1270,209 @@
       });
     }
 
+    function fail(action, code, extra) {
+      extra = extra || {};
+      emitStatus(deps, {
+        action : action,
+        ok     : false,
+        code   : code,
+        message: extra.message || code,
+        filename: extra.filename,
+      });
+      var out = { ok: false, error: code };
+      Object.keys(extra).forEach(function (key) {
+        if (key !== "message") {
+          out[key] = extra[key];
+        }
+      });
+      return out;
+    }
+
+    function begin(action) {
+      if (inflight[action]) {
+        return fail(action, "duplicate", { message: "Export already in progress" });
+      }
+      inflight[action] = true;
+      return null;
+    }
+
+    function end(action) {
+      inflight[action] = false;
+    }
+
     async function copy() {
-      var thread = snapshot();
-      var md     = serializeThreadToMarkdown(thread, { frontmatter: false });
-      var result = await copyText(md, { clipboard: clipboard, document: doc });
-      emitStatus(deps, { action: "copy", ok: result.ok, method: result.method });
-      return { ok: result.ok, markdown: md, method: result.method };
+      var blocked = begin("copy");
+      var thread;
+      var md;
+      var result;
+      if (blocked) {
+        return blocked;
+      }
+      try {
+        if (signalAborted(deps.signal)) {
+          return fail("copy", "cancelled");
+        }
+        thread = snapshot();
+        if (!isSupportedExportRoute(loc.href, thread.messages.length)) {
+          return fail("copy", "unsupported_route");
+        }
+        md     = serializeThreadToMarkdown(thread, { frontmatter: false });
+        result = await copyText(md, { clipboard: clipboard, document: doc });
+        if (!result.ok) {
+          return fail("copy", "clipboard_denied", { method: result.method, markdown: md });
+        }
+        emitStatus(deps, { action: "copy", ok: true, code: "ok", method: result.method });
+        return { ok: true, markdown: md, method: result.method };
+      } finally {
+        end("copy");
+      }
     }
 
     async function saveMarkdown() {
-      var thread = snapshot();
-      var md     = serializeThreadToMarkdown(thread, { frontmatter: true });
-      var name   = slugifyFilename(thread.title, thread.exportedAt) + ".md";
-      var blob   = new Blob([md], { type: "text/markdown;charset=utf-8" });
-      download(blob, name, doc);
-      emitStatus(deps, { action: "save-md", ok: true, filename: name });
-      return { ok: true, filename: name, markdown: md };
+      var blocked = begin("save-md");
+      var thread;
+      var md;
+      var name;
+      var blob;
+      var saved;
+      if (blocked) {
+        return blocked;
+      }
+      try {
+        if (signalAborted(deps.signal)) {
+          return fail("save-md", "cancelled");
+        }
+        thread = snapshot();
+        if (!isSupportedExportRoute(loc.href, thread.messages.length)) {
+          return fail("save-md", "unsupported_route");
+        }
+        md   = serializeThreadToMarkdown(thread, { frontmatter: true });
+        name = slugifyFilename(thread.title, thread.exportedAt) + ".md";
+        blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+        saved = download(blob, name, doc);
+        if (saved === false) {
+          return fail("save-md", "download_denied", { filename: name, markdown: md });
+        }
+        emitStatus(deps, { action: "save-md", ok: true, code: "ok", filename: name });
+        return { ok: true, filename: name, markdown: md };
+      } finally {
+        end("save-md");
+      }
     }
 
     async function saveZip() {
+      var blocked = begin("save-zip");
       var thread;
-      var convId;
-      var jsonResult;
       var media;
-      var jsonCount;
       var signals;
       var gaps;
       var chatMd;
       var manifest;
+      var manifestObject;
       var zip;
       var blob;
       var name;
       var i;
-      if (typeof JSZipImpl !== "function") {
-        emitStatus(deps, { action: "save-zip", ok: false, message: "JSZip is not loaded" });
-        return { ok: false, error: "jszip_missing" };
+      var mediaFiles;
+      var saved;
+      var partial;
+      if (blocked) {
+        return blocked;
       }
-      thread     = snapshot();
-      convId     = parseConversationIdFromUrl(loc.href);
-      jsonResult = { ok: false, reason: "skipped" };
-      if (convId && fetchImpl) {
-        jsonResult = await fetchCurrentConversationJson(fetchImpl, loc.origin, convId);
-      } else if (!convId) {
-        jsonResult = { ok: false, reason: "no_conversation_id" };
-      } else {
-        jsonResult = { ok: false, reason: "no_fetch" };
+      try {
+        if (typeof JSZipImpl !== "function") {
+          return fail("save-zip", "jszip_missing", { message: "JSZip is not loaded" });
+        }
+        if (signalAborted(deps.signal)) {
+          return fail("save-zip", "cancelled");
+        }
+        thread = snapshot();
+        if (!isSupportedExportRoute(loc.href, thread.messages.length)) {
+          return fail("save-zip", "unsupported_route");
+        }
+        media = await collectAndFetchMedia(thread, fetchImpl, {
+          limits: mediaLimits,
+          clock : clock,
+          signal: deps.signal,
+        });
+        if (media.cancelled && signalAborted(deps.signal)) {
+          return fail("save-zip", "cancelled", {
+            markdown: serializeThreadToMarkdown(thread, { frontmatter: true }),
+          });
+        }
+        signals = inspectExportSignals(root, {
+          failedMedia : media.failed,
+          skippedMedia: media.skipped,
+        });
+        gaps     = detectExportGaps(signals);
+        chatMd   = serializeThreadToMarkdown(rewriteThreadMedia(thread, media.rewrites), {
+          frontmatter: true,
+        });
+        mediaFiles = media.files.map(function (file) {
+          return "media/" + file.name;
+        });
+        manifestObject = buildManifestObject({
+          title     : thread.title,
+          url       : loc.href,
+          exportedAt: thread.exportedAt,
+          included  : { mediaCount: media.files.length },
+          gaps      : gaps,
+          failedMedia: media.failedItems,
+          skippedMedia: media.skippedItems,
+          mediaFiles: mediaFiles,
+        });
+        manifest = buildManifestMarkdown({
+          title     : thread.title,
+          url       : loc.href,
+          exportedAt: thread.exportedAt,
+          included  : { chatMd: true, mediaCount: media.files.length },
+          gaps      : gaps,
+          failedMedia: media.failedItems,
+          skippedMedia: media.skippedItems,
+        });
+        zip = new JSZipImpl();
+        zip.file("chat.md", chatMd);
+        zip.file("MANIFEST.md", manifest);
+        zip.file("manifest.json", JSON.stringify(manifestObject, null, 2));
+        for (i = 0; i < media.files.length; i += 1) {
+          zip.file("media/" + media.files[i].name, media.files[i].content);
+        }
+        blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+        name = slugifyFilename(thread.title, thread.exportedAt) + ".zip";
+        saved = download(blob, name, doc);
+        if (saved === false) {
+          return fail("save-zip", "download_denied", {
+            filename : name,
+            markdown : chatMd,
+            manifest : manifest,
+            manifestObject: manifestObject,
+            files    : zip.files ? Object.keys(zip.files) : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles),
+          });
+        }
+        partial = media.failed > 0 || media.skipped > 0;
+        emitStatus(deps, {
+          action  : "save-zip",
+          ok      : true,
+          code    : partial ? "partial" : "ok",
+          filename: name,
+        });
+        return {
+          ok            : true,
+          filename      : name,
+          gaps          : gaps,
+          mediaCount    : media.files.length,
+          failedMedia   : media.failedItems,
+          skippedMedia  : media.skippedItems,
+          partial       : partial,
+          formats       : ["md", "zip"],
+          files         : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles),
+          manifest      : manifest,
+          manifestObject: manifestObject,
+          markdown      : chatMd,
+        };
+      } finally {
+        end("save-zip");
       }
-      media     = await collectAndFetchMedia(thread, jsonResult.data, fetchImpl);
-      jsonCount = countConversationJsonMessages(jsonResult.data);
-      signals   = inspectExportSignals(root, {
-        jsonMessageCount : jsonCount,
-        domMessageCount  : thread.messages.length,
-        conversationJson : jsonResult.ok ? jsonResult.data : null,
-        failedMedia      : media.failed,
-        fetchedFileUrls  : media.fetchedUrls,
-      });
-      if (!jsonResult.ok) {
-        signals.conversationJsonMissing = true;
-      }
-      gaps     = detectExportGaps(signals);
-      chatMd   = serializeThreadToMarkdown(rewriteThreadMedia(thread, media.rewrites), {
-        frontmatter: true,
-      });
-      manifest = buildManifestMarkdown({
-        title                 : thread.title,
-        url                   : loc.href,
-        exportedAt            : thread.exportedAt,
-        included              : {
-          chatMd          : true,
-          conversationJson: jsonResult.ok,
-          mediaCount      : media.files.length,
-        },
-        gaps                  : gaps,
-        conversationFetchError: jsonResult.ok ? null : jsonResult.reason,
-      });
-      zip = new JSZipImpl();
-      zip.file("chat.md", chatMd);
-      zip.file("MANIFEST.md", manifest);
-      if (jsonResult.ok) {
-        zip.file("conversation.json", JSON.stringify(jsonResult.data, null, 2));
-      }
-      for (i = 0; i < media.files.length; i += 1) {
-        zip.file("media/" + media.files[i].name, media.files[i].content);
-      }
-      blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-      name = slugifyFilename(thread.title, thread.exportedAt) + ".zip";
-      download(blob, name, doc);
-      emitStatus(deps, { action: "save-zip", ok: true, filename: name });
-      return {
-        ok         : true,
-        filename   : name,
-        gaps       : gaps,
-        includedJson: jsonResult.ok,
-        mediaCount : media.files.length,
-        manifest   : manifest,
-        markdown   : chatMd,
-      };
     }
 
     return {
@@ -1302,28 +1484,32 @@
   }
 
   var api = {
-    OFFICIAL_EXPORT_HELP            : OFFICIAL_EXPORT_HELP,
-    VISIBLE_THREAD_NOTICE           : VISIBLE_THREAD_NOTICE,
-    INHERENT_GAPS                   : INHERENT_GAPS,
-    yamlDoubleQuoted                : yamlDoubleQuoted,
-    buildFrontmatter                : buildFrontmatter,
-    serializeMessageToMarkdown      : serializeMessageToMarkdown,
-    serializeThreadToMarkdown       : serializeThreadToMarkdown,
-    detectExportGaps                : detectExportGaps,
-    buildManifestMarkdown           : buildManifestMarkdown,
-    parseConversationIdFromUrl      : parseConversationIdFromUrl,
-    conversationRequestUrl          : conversationRequestUrl,
-    slugifyFilename                 : slugifyFilename,
-    countConversationJsonMessages   : countConversationJsonMessages,
-    collectVisibleThread            : collectVisibleThread,
-    inspectExportSignals            : inspectExportSignals,
-    collectMediaFromMessages        : collectMediaFromMessages,
-    collectMediaFromConversationJson: collectMediaFromConversationJson,
-    rewriteThreadMedia              : rewriteThreadMedia,
-    copyText                        : copyText,
-    triggerDownload                 : triggerDownload,
-    createExporter                  : createExporter,
-    fetchCurrentConversationJson    : fetchCurrentConversationJson,
+    OFFICIAL_EXPORT_HELP      : OFFICIAL_EXPORT_HELP,
+    VISIBLE_THREAD_NOTICE     : VISIBLE_THREAD_NOTICE,
+    INHERENT_GAPS             : INHERENT_GAPS,
+    MEDIA_MAX_FILES           : MEDIA_MAX_FILES,
+    MEDIA_MAX_BYTES_EACH      : MEDIA_MAX_BYTES_EACH,
+    MEDIA_MAX_BYTES_TOTAL     : MEDIA_MAX_BYTES_TOTAL,
+    MEDIA_MAX_MS              : MEDIA_MAX_MS,
+    yamlDoubleQuoted          : yamlDoubleQuoted,
+    buildFrontmatter          : buildFrontmatter,
+    serializeMessageToMarkdown: serializeMessageToMarkdown,
+    serializeThreadToMarkdown : serializeThreadToMarkdown,
+    detectExportGaps          : detectExportGaps,
+    buildManifestMarkdown     : buildManifestMarkdown,
+    buildManifestObject       : buildManifestObject,
+    parseConversationIdFromUrl: parseConversationIdFromUrl,
+    isSupportedExportRoute    : isSupportedExportRoute,
+    slugifyFilename           : slugifyFilename,
+    sanitizeMediaFilename     : sanitizeMediaFilename,
+    collectVisibleThread      : collectVisibleThread,
+    inspectExportSignals      : inspectExportSignals,
+    collectMediaFromMessages  : collectMediaFromMessages,
+    rewriteThreadMedia        : rewriteThreadMedia,
+    copyText                  : copyText,
+    triggerDownload           : triggerDownload,
+    createExporter            : createExporter,
+    collectAndFetchMedia      : collectAndFetchMedia,
   };
 
   global.CwaExportCore = api;

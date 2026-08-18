@@ -96,9 +96,8 @@ describe("gap manifest", () => {
       title     : "Widget export",
       url       : "https://chatgpt.com/c/abc",
       exportedAt: FIXED_ISO,
-      included  : { conversationJson: false, mediaCount: 0 },
+      included  : { mediaCount: 0 },
       gaps      : core.detectExportGaps({}),
-      conversationFetchError: "skipped",
     });
 
     expect(manifest).toContain("Visible-thread export manifest");
@@ -109,19 +108,20 @@ describe("gap manifest", () => {
     expect(manifest).toContain("`deep_research_panels`");
     expect(manifest).toContain("`code_interpreter_files`");
     expect(manifest).toContain("`hidden_thinking`");
-    expect(manifest).toContain("conversation.json");
-    expect(manifest).toContain("omitted (skipped)");
+    expect(manifest).toContain("observed-ui");
+    expect(manifest).not.toContain("conversation.json");
+    expect(manifest).not.toContain("includedJson");
   });
 
-  it("marks detected gaps from signals without inventing extra harvests", () => {
+  it("marks detected gaps from DOM/media signals without inventing extra harvests", () => {
     const gaps = core.detectExportGaps({
-      unloadedMessages       : true,
-      closedCanvases         : true,
-      deepResearchPanels     : false,
-      codeInterpreterFiles   : true,
-      hiddenThinking         : true,
-      conversationJsonMissing: true,
-      mediaFetchFailed       : true,
+      unloadedMessages    : true,
+      closedCanvases      : true,
+      deepResearchPanels  : false,
+      codeInterpreterFiles: true,
+      hiddenThinking      : true,
+      mediaFetchFailed    : true,
+      mediaSkipped        : true,
     });
 
     expect(gaps.detected.map((item) => item.id)).toEqual([
@@ -129,10 +129,27 @@ describe("gap manifest", () => {
       "closed_canvases",
       "code_interpreter_files",
       "hidden_thinking",
-      "conversation_json_unavailable",
       "media_fetch_failed",
+      "media_skipped",
     ]);
     expect(gaps.inherent).toHaveLength(5);
+  });
+
+  it("builds a machine-readable manifest without a conversation JSON file entry", () => {
+    const obj = core.buildManifestObject({
+      title     : "Widget export",
+      url       : "https://chatgpt.com/c/abc",
+      exportedAt: FIXED_ISO,
+      included  : { mediaCount: 1 },
+      mediaFiles: ["media/001-plot.png"],
+      gaps      : core.detectExportGaps({}),
+    });
+
+    expect(obj.schema).toBe("cwa.export-manifest.v1");
+    expect(obj.source.authority).toBe("observed-ui");
+    expect(obj.formats).toEqual(["md", "zip"]);
+    expect(obj.files).toEqual(["chat.md", "MANIFEST.md", "manifest.json", "media/001-plot.png"]);
+    expect(obj.files).not.toContain("conversation.json");
   });
 });
 
@@ -149,15 +166,15 @@ describe("url and filename helpers", () => {
     expect(core.parseConversationIdFromUrl("https://chatgpt.com/")).toBeNull();
   });
 
-  it("builds a same-origin conversation URL", () => {
+  it("treats a conversation URL or mounted messages as a supported export route", () => {
     expect(
-      core.conversationRequestUrl(
-        "https://chatgpt.com/",
-        "11111111-2222-4333-8444-555555555555"
+      core.isSupportedExportRoute(
+        "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+        0
       )
-    ).toBe(
-      "https://chatgpt.com/backend-api/conversation/11111111-2222-4333-8444-555555555555"
-    );
+    ).toBe(true);
+    expect(core.isSupportedExportRoute("https://chatgpt.com/settings", 2)).toBe(true);
+    expect(core.isSupportedExportRoute("https://chatgpt.com/settings", 0)).toBe(false);
   });
 
   it("slugifies a deterministic download stem", () => {
@@ -166,16 +183,19 @@ describe("url and filename helpers", () => {
     );
   });
 
-  it("counts user/assistant nodes in conversation JSON", () => {
-    expect(
-      core.countConversationJsonMessages({
-        mapping: {
-          a: { message: { author: { role: "user" } } },
-          b: { message: { author: { role: "assistant" } } },
-          c: { message: { author: { role: "system" } } },
-        },
-      })
-    ).toBe(2);
+  it("sanitizes media names so they cannot traverse out of media/", () => {
+    expect(core.sanitizeMediaFilename(0, "../secret.png", "https://cdn.example/a.png")).toBe(
+      "001-secret-png.png"
+    );
+    expect(core.sanitizeMediaFilename(1, "..\\windows", "https://cdn.example/x.jpg")).toBe(
+      "002-windows.jpg"
+    );
+    expect(core.sanitizeMediaFilename(0, "../secret.png", "https://cdn.example/a.png")).not.toContain(
+      ".."
+    );
+    expect(core.sanitizeMediaFilename(0, "../secret.png", "https://cdn.example/a.png")).not.toContain(
+      "/"
+    );
   });
 });
 
@@ -206,24 +226,23 @@ describe("collectVisibleThread", () => {
     expect(md).toContain("![plot](https://files.oaiusercontent.com/img-1.png)");
   });
 
-  it("flags known DOM gaps from the fixture", () => {
+  it("flags known DOM gaps from the fixture without conversation JSON counts", () => {
     document.body.replaceChildren();
     const wrap = document.createElement("div");
     wrap.insertAdjacentHTML("afterbegin", FIXTURE);
     document.body.appendChild(wrap);
 
     const signals = core.inspectExportSignals(document.body, {
-      jsonMessageCount : 3,
-      domMessageCount  : 2,
-      conversationJson : null,
-      failedMedia      : 1,
+      failedMedia : 1,
+      skippedMedia: 1,
     });
 
     expect(signals.unloadedMessages).toBe(true);
     expect(signals.closedCanvases).toBe(true);
     expect(signals.deepResearchPanels).toBe(true);
     expect(signals.codeInterpreterFiles).toBe(true);
-    expect(signals.conversationJsonMissing).toBe(true);
     expect(signals.mediaFetchFailed).toBe(true);
+    expect(signals.mediaSkipped).toBe(true);
+    expect(signals.conversationJsonMissing).toBeUndefined();
   });
 });

@@ -4,8 +4,8 @@
  * chrome.js toolbar should dispatch (on window or a bubbling target):
  *   cwa:copy     → clipboard markdown of the **visible thread**
  *   cwa:save-md  → download .md (YAML frontmatter + visible thread)
- *   cwa:save-zip → best-effort zip: chat.md + optional conversation.json
- *                      + fetched media/ + MANIFEST.md (known gaps)
+ *   cwa:save-zip → best-effort zip: chat.md + MANIFEST.md + manifest.json
+ *                      + bounded visible media/ (no private conversation JSON)
  *
  * This is not “export everything”. Full account archive:
  * ChatGPT Settings → Data Controls → Export data.
@@ -30,6 +30,22 @@
     return global.fetch.bind(global);
   }
 
+  function emitDuplicate(action) {
+    var Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+    if (!Ev || typeof global.dispatchEvent !== "function") {
+      return;
+    }
+    global.dispatchEvent(new Ev("cwa:export-status", {
+      bubbles: true,
+      detail : {
+        action : action,
+        ok     : false,
+        code   : "duplicate",
+        message: "Export already in progress",
+      },
+    }));
+  }
+
   function boot() {
     if (global.__cwaExportBooted) {
       return;
@@ -52,6 +68,7 @@
     function run(action, method) {
       return function () {
         if (inflight[action]) {
+          emitDuplicate(action);
           return;
         }
         inflight[action] = true;

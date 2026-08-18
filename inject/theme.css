@@ -380,13 +380,37 @@ form:has([id*="prompt-textarea" i]):focus-within,
 .cwa-sidebar-handle:focus-visible,
 .cwa-palette-item:focus-visible,
 .cwa-minimap:focus-visible,
-.cwa-palette-input:focus-visible {
+.cwa-palette-input:focus-visible,
+.cwa-export-status:focus-visible {
   outline: 2px solid var(--cwa-focus);
   outline-offset: 2px;
 }
 
 .cwa-toolbar button:hover {
   filter: brightness(1.08);
+}
+
+.cwa-export-status {
+  position: fixed;
+  top: calc(var(--cwa-titlebar-inset) + 52px);
+  right: calc(var(--cwa-minimap-width) + 16px);
+  z-index: var(--cwa-z-chrome);
+  max-width: min(28rem, calc(100vw - 48px));
+  padding: 8px 12px;
+  border: 1px solid var(--cwa-border);
+  border-radius: 12px;
+  background: var(--cwa-toolbar-bg);
+  color: var(--cwa-text);
+  font: 600 12px/1.35 system-ui, -apple-system, sans-serif;
+  box-shadow: var(--cwa-shadow);
+}
+
+.cwa-export-status[data-ok="false"] {
+  color: var(--cwa-danger);
+}
+
+.cwa-export-status[hidden] {
+  display: none;
 }
 
 .cwa-sidebar-handle {
