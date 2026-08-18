@@ -1,3 +1,11 @@
-# Operator tool catalog (docs only in Wave 1)
-tools: []
-policy: no default network to ChatGPT backend APIs
+# Operator tool catalog
+policy: no default network
+tools:
+  - id: copy-visible
+    event: cwa:copy
+  - id: save-md
+    event: cwa:save-md
+  - id: save-zip
+    event: cwa:save-zip
+  - id: diagnostics
+    action: diagnostics

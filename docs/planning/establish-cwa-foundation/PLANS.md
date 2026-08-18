@@ -1,7 +1,7 @@
 # Plans: establish-cwa-foundation
 
-**Change:** Wave 0 grounding + Wave 1 truthful visible-thread export (TASK-001–019).
-**Stop:** after TASK-019. Do not start TASK-020.
+**Foundation change:** Wave 0 grounding + Wave 1 truthful visible-thread export (TASK-001–019), now frozen.
+**Sibling changes:** Wave 2–5 own TASK-020–059; their implementation artifacts are inventoried below, but validation results remain TBD.
 **Baseline SHA:** `6da172fbc9d44f956f525813810e875a3579b270`
 
 ## Overlay adoption
@@ -69,7 +69,83 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 
 ## TASK-019 recommendation
 
-Wave 1 export no longer issues private conversation or session fetches. Wave 2 (TASK-020, selector registry / lifecycle) is **cleared as a future dependency** but is **not started here**.
+Wave 1 export no longer issues private conversation or session fetches. This historical gate cleared Wave 2 as a sibling change; TASK-001–019 remain frozen.
+
+## Wave 2 evidence (TASK-020–029)
+
+| Task | Evidence | Result |
+| --- | --- | --- |
+| TASK-020 | `inject/selectors.js` | Implementation artifact present: ordered semantic fallbacks and hashed class-only rejection |
+| TASK-021 | `inject/scheduler.js` | Implementation artifact present: id-based rAF/timeout coalescing |
+| TASK-022 | `inject/lifecycle.js` | Implementation artifact present: explicit SPA lifecycle states |
+| TASK-023 | `inject/safe-mode.js` | Implementation artifact present: critical-miss strike policy |
+| TASK-024 | `inject/diagnostics.js` | Implementation artifact present: redacted route/runtime snapshot |
+| TASK-025 | `inject/chrome.js` compatibility hooks | Integration artifact present; command validation TBD |
+| TASK-026 | Safe-mode chrome/export separation | Integration artifact present; command validation TBD |
+| TASK-027 | Pake inject order + focused module tests | Files present; suite result is `TBD-PNPM-TEST` |
+| TASK-028 | Validation commands below | `TBD-PNPM-TEST`; `TBD-PLANNING-VALIDATION`; `TBD-RUNTIME-VALIDATION`; `TBD-FORBIDDEN-RG` |
+| TASK-029 | Evidence/recommendation gate | Pending TASK-028; no PASS claimed |
+
+## Wave 3 evidence (TASK-030–039)
+
+| Task | Evidence | Result |
+| --- | --- | --- |
+| TASK-030 | `inject/native-bridge.js` protocol | Implementation artifact present: `cwa.native.v1` |
+| TASK-031 | Optional host detection and normalized errors | Implementation artifact present |
+| TASK-032 | Native payload validation | Implementation artifact present: sensitive-looking fields rejected before host invocation |
+| TASK-033 | Local-file-only host payload | Implementation artifact present; command validation TBD |
+| TASK-034 | `inject/export.js` native-to-browser fallback | Integration artifact present; command validation TBD |
+| TASK-035 | Pake inject order; no sidecar/dependency addition | Config artifact present |
+| TASK-036 | `tests/inject/native-bridge.test.js` | Test artifact present; suite result is `TBD-PNPM-TEST` |
+| TASK-037 | `docs/adr/0007-native-companion-fail-closed.md` | Accepted boundary recorded |
+| TASK-038 | Validation commands below | `TBD-PNPM-TEST`; `TBD-PLANNING-VALIDATION`; `TBD-RUNTIME-VALIDATION`; `TBD-FORBIDDEN-RG` |
+| TASK-039 | Evidence/recommendation gate | Pending TASK-038; no shipped native host or PASS claimed |
+
+## Wave 4 evidence (TASK-040–049)
+
+| Task | Evidence | Result |
+| --- | --- | --- |
+| TASK-040 | `inject/tools.js` catalog | Implementation artifact present: four local adapters |
+| TASK-041 | Existing export event dispatch | Implementation artifact present |
+| TASK-042 | Redacted diagnostics adapter | Implementation artifact present |
+| TASK-043 | Unknown/unhandled tool errors | Implementation artifact present: fail-closed result codes |
+| TASK-044 | `inject/chrome.js` palette integration | Integration artifact present; command validation TBD |
+| TASK-045 | `tools/catalog.yaml` | Catalog artifact present with `no default network` policy |
+| TASK-046 | Local-only adapter boundary | Static artifact review complete; runtime validation TBD |
+| TASK-047 | Pake inject order + `tests/inject/tools.test.js` | Files present; suite result is `TBD-PNPM-TEST` |
+| TASK-048 | Validation commands below | `TBD-PNPM-TEST`; `TBD-PLANNING-VALIDATION`; `TBD-RUNTIME-VALIDATION`; `TBD-FORBIDDEN-RG` |
+| TASK-049 | Evidence/recommendation gate | Pending TASK-048; no PASS claimed |
+
+## Wave 5 evidence (TASK-050–059)
+
+| Task | Evidence | Result |
+| --- | --- | --- |
+| TASK-050 | `collectVisibleFileCards` in `inject/export-core.js` | Implementation artifact present |
+| TASK-051 | `main` scoping and chrome/nav exclusions | Implementation artifact present |
+| TASK-052 | Visible-attribute URL authority | Implementation artifact present; runtime validation TBD |
+| TASK-053 | Candidate merge/deduplication | Implementation artifact present |
+| TASK-054 | Existing media caps + `credentials: "omit"` | Integration artifact present; command validation TBD |
+| TASK-055 | `manifest.media.workflow = "visible-dom"` | Schema/runtime artifact present |
+| TASK-056 | Nonfatal failed/skipped media provenance | Implementation artifact present |
+| TASK-057 | Synthetic DOM and ZIP tests | Test artifacts present; suite result is `TBD-PNPM-TEST` |
+| TASK-058 | Validation commands below | `TBD-PNPM-TEST`; `TBD-PLANNING-VALIDATION`; `TBD-RUNTIME-VALIDATION`; `TBD-FORBIDDEN-RG` |
+| TASK-059 | Evidence/recommendation gate | Pending TASK-058; no PASS claimed |
+
+### Wave 2–5 command results (TBD)
+
+```text
+pnpm test
+  TBD-PNPM-TEST
+
+python3 scripts/validate_planning.py
+  TBD-PLANNING-VALIDATION
+
+python3 scripts/validate_planning.py --runtime
+  TBD-RUNTIME-VALIDATION
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject tests openspec docs schemas scripts
+  TBD-FORBIDDEN-RG
+```
 
 ## Skipped checks
 

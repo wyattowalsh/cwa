@@ -30,6 +30,14 @@ REQUIRED_FILES = (
     "openspec/changes/establish-cwa-foundation/specs/validation-and-auditability/spec.md",
     "openspec/changes/establish-cwa-foundation/specs/test-architecture/spec.md",
     "openspec/changes/establish-cwa-foundation/specs/native-companion-boundary/spec.md",
+    "openspec/changes/add-cwa-compatibility-runtime/tasks.md",
+    "openspec/changes/add-cwa-compatibility-runtime/specs/compatibility-runtime/spec.md",
+    "openspec/changes/add-cwa-native-companion/tasks.md",
+    "openspec/changes/add-cwa-native-companion/specs/native-companion/spec.md",
+    "openspec/changes/add-cwa-tool-adapters/tasks.md",
+    "openspec/changes/add-cwa-tool-adapters/specs/tool-adapters/spec.md",
+    "openspec/changes/add-cwa-media-workflows/tasks.md",
+    "openspec/changes/add-cwa-media-workflows/specs/media-workflows/spec.md",
     "schemas/export-manifest.schema.json",
     "docs/planning/establish-cwa-foundation/PLANS.md",
     "docs/planning/establish-cwa-foundation/repository-inventory.md",
@@ -41,12 +49,20 @@ REQUIRED_FILES = (
     "docs/planning/establish-cwa-foundation/source-registry.md",
     "docs/planning/establish-cwa-foundation/known-limitations.md",
     "docs/adr/0006-visible-thread-export-only.md",
+    "docs/adr/0007-native-companion-fail-closed.md",
 )
 
 INJECT_RUNTIME = (
     "inject/export-core.js",
     "inject/export.js",
     "inject/chrome.js",
+    "inject/selectors.js",
+    "inject/scheduler.js",
+    "inject/lifecycle.js",
+    "inject/safe-mode.js",
+    "inject/diagnostics.js",
+    "inject/tools.js",
+    "inject/native-bridge.js",
 )
 
 FORBIDDEN_RUNTIME = (
@@ -116,6 +132,23 @@ def check_shape(root: Path) -> list[str]:
                 errors.append(f"export spec missing {needle!r}")
         if "includedJson" in spec and "SHALL NOT" not in spec:
             errors.append("export spec must forbid includedJson")
+    pake_injects: dict[str, list[object]] = {}
+    for rel in ("pake.json", "pake.cwa.json"):
+        path = root / rel
+        if not path.is_file():
+            continue
+        try:
+            config = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as err:
+            errors.append(f"{rel} JSON: {err}")
+            continue
+        inject = config.get("inject")
+        if not isinstance(inject, list):
+            errors.append(f"{rel} inject must be a list")
+            continue
+        pake_injects[rel] = inject
+    if len(pake_injects) == 2 and pake_injects["pake.json"] != pake_injects["pake.cwa.json"]:
+        errors.append("pake.json and pake.cwa.json inject lists differ")
     return errors
 
 

@@ -1,6 +1,6 @@
 # Tasks: establish-cwa-foundation (Wave 0–1)
 
-Execute **TASK-001 through TASK-019** in this change. Stop after TASK-019. Do not start TASK-020 (Wave 2 chrome) in this run.
+**Frozen:** TASK-001 through TASK-019 are the completed Wave 0–1 foundation record. Do not reopen or renumber them from sibling changes.
 
 Status legend: `[ ]` pending · `[x]` done · evidence lives in `docs/planning/establish-cwa-foundation/PLANS.md`.
 
@@ -29,6 +29,11 @@ Status legend: `[ ]` pending · `[x]` done · evidence lives in `docs/planning/e
 - [x] **TASK-018** Full `pnpm test`; `python3 scripts/validate_planning.py` (and `--runtime` once the leak is gone); ripgrep `/backend-api/conversation` and review every hit. PASS only with executed evidence.
 - [x] **TASK-019** Update PLANS, risk-register, decision-log; recommend Wave 2 only if export boundary is clean. **Do not start TASK-020.**
 
-## Later waves (not this run)
+## Later waves (sibling changes)
 
-- [ ] **TASK-020+** Chrome selector registry / native companion / tool adapters / media workflows — documented in sibling OpenSpec changes only. **Not started.**
+- **TASK-020–029** Wave 2 compatibility runtime — [`../add-cwa-compatibility-runtime/tasks.md`](../add-cwa-compatibility-runtime/tasks.md)
+- **TASK-030–039** Wave 3 optional native companion — [`../add-cwa-native-companion/tasks.md`](../add-cwa-native-companion/tasks.md)
+- **TASK-040–049** Wave 4 local tool adapters — [`../add-cwa-tool-adapters/tasks.md`](../add-cwa-tool-adapters/tasks.md)
+- **TASK-050–059** Wave 5 visible-DOM media workflows — [`../add-cwa-media-workflows/tasks.md`](../add-cwa-media-workflows/tasks.md)
+
+Wave 2–5 status and validation gates belong to those sibling task files. The checked TASK-001–019 foundation record remains frozen.

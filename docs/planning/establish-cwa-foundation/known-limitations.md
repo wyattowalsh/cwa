@@ -7,4 +7,7 @@ These always apply even when no extra gaps are detected:
 - Deep Research panels that are not mounted are omitted
 - Code Interpreter files are included only when a **visible** URL fetch succeeds under caps
 - Hidden thinking is omitted unless the thinking block is in the DOM
+- The native companion is optional; this repository defines the page-world protocol but ships no native host or sidecar
+- Safe mode protects CWA chrome only; it does not alter, repair, or replace ChatGPT page behavior, and export remains available
+- File-card export requires a URL exposed by mounted visible DOM; hidden, expired, or inaccessible URLs are omitted and recorded
 - This is not an account archive — use ChatGPT Settings → Data Controls → Export data
