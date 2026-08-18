@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wyattowalsh/cwa/schemas/export-manifest.schema.json",
+  "title": "CWA visible-thread export manifest",
+  "description": "Provenance for a locally generated ZIP of the currently visible ChatGPT thread. Does not describe private provider conversation JSON.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "product",
+    "source",
+    "exportedAt",
+    "formats",
+    "files",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "cwa.export-manifest.v1"
+    },
+    "product": {
+      "const": "cwa"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "url"],
+      "properties": {
+        "authority": {
+          "enum": ["observed-ui", "local-cwa"]
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "exportedAt": {
+      "type": "string"
+    },
+    "formats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["md", "zip", "clipboard"]
+      },
+      "description": "Local export surfaces only. The value json is forbidden because it implied a conversation payload."
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "not": {
+          "const": "conversation.json"
+        }
+      },
+      "description": "Archive entry paths. chat.md and MANIFEST.md are required; conversation.json is forbidden."
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "detail"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "detected": { "type": "boolean" }
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "included": { "type": "integer", "minimum": 0 },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url", "reason"],
+            "properties": {
+              "url": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["url", "reason"],
+            "properties": {
+              "url": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "officialExport": {
+      "type": "string"
+    }
+  }
+}

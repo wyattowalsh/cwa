@@ -1,0 +1,14 @@
+{
+  "head": "6da172fbc9d44f956f525813810e875a3579b270",
+  "product": "cwa",
+  "note": "Original planning ZIP was not present; this records the expected baseline SHA for TASK-001.",
+  "inject": [
+    "inject/theme.css",
+    "inject/chrome.js",
+    "inject/export-core.js",
+    "inject/export.js",
+    "inject/vendor/jszip.min.js"
+  ],
+  "pake_config": "pake.cwa.json",
+  "duplicate_pake_json": true
+}

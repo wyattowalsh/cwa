@@ -1,0 +1,5 @@
+schema: spec-driven
+project: cwa
+active_change: establish-cwa-foundation
+context: |
+  Browser-only Pake MVP. Wave 1 removes private conversation fetches.
