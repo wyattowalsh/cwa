@@ -164,12 +164,69 @@
     return detail.message || code;
   }
 
+  function isChromeOwnedNode(node) {
+    var element = node && typeof node.closest === "function"
+      ? node
+      : node && node.parentElement;
+    return Boolean(element && typeof element.closest === "function" &&
+      element.closest("[data-cwa-chrome]"));
+  }
+
+  function shouldIgnoreMutations(records) {
+    if (!records || !records.length) return false;
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      if (!record) return false;
+      if (record.type !== "childList") {
+        if (!isChromeOwnedNode(record.target)) return false;
+        continue;
+      }
+      if (isChromeOwnedNode(record.target)) continue;
+      var lists = [record.addedNodes || [], record.removedNodes || []];
+      var sawElement = false;
+      for (var j = 0; j < lists.length; j++) {
+        for (var k = 0; k < lists[j].length; k++) {
+          var node = lists[j][k];
+          if (!node || node.nodeType !== 1) continue;
+          sawElement = true;
+          if (!isChromeOwnedNode(node)) return false;
+        }
+      }
+      if (!sawElement) return false;
+    }
+    return true;
+  }
+
+  function isSidebarCandidate(node) {
+    if (!node || isChromeOwnedNode(node) ||
+        typeof node.getBoundingClientRect !== "function") {
+      return false;
+    }
+    var rect = node.getBoundingClientRect();
+    return rect.height > 120 && rect.width > 40 && rect.left < 280;
+  }
+
+  function isTypingTarget(node) {
+    if (!node) return false;
+    var tag = (node.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (node.isContentEditable) return true;
+    if (typeof node.closest !== "function") return false;
+    return Boolean(node.closest(
+      "[contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only']"
+    ));
+  }
+
   var api = {
     clampSidebarWidth: clampSidebarWidth,
     mapMinimapYToIndex: mapMinimapYToIndex,
     offsetToMinimapY: offsetToMinimapY,
     nearestOffsetIndex: nearestOffsetIndex,
     formatExportStatus: formatExportStatus,
+    isChromeOwnedNode: isChromeOwnedNode,
+    shouldIgnoreMutations: shouldIgnoreMutations,
+    isSidebarCandidate: isSidebarCandidate,
+    isTypingTarget: isTypingTarget,
     SIDEBAR_MIN: SIDEBAR_MIN,
     SIDEBAR_MAX: SIDEBAR_MAX,
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT,
@@ -375,11 +432,8 @@
     var list = sidebarSelectors();
     if (selectors && typeof selectors.resolve === "function") {
       resolved = selectors.resolve(document, "sidebar");
-      if (resolved && resolved.node) {
-        if (!resolved.node.closest ||
-            !resolved.node.closest("#" + NS + "-palette, ." + NS + "-toolbar, ." + NS + "-minimap")) {
-          return resolved.node;
-        }
+      if (resolved && isSidebarCandidate(resolved.node)) {
+        return resolved.node;
       }
     }
     for (var i = 0; i < list.length; i++) {
@@ -388,13 +442,7 @@
         if (seen.indexOf(found[j]) === -1) seen.push(found[j]);
       }
     }
-    var candidates = seen.filter(function (node) {
-      if (node.closest && node.closest("#" + NS + "-palette, ." + NS + "-toolbar, ." + NS + "-minimap")) {
-        return false;
-      }
-      var r = node.getBoundingClientRect();
-      return r.height > 120 && r.width > 40 && r.left < 280;
-    });
+    var candidates = seen.filter(isSidebarCandidate);
     candidates.sort(function (a, b) {
       return b.getBoundingClientRect().height - a.getBoundingClientRect().height;
     });
@@ -490,6 +538,7 @@
   function mountHandle(node) {
     var existing = qs("." + NS + "-sidebar-handle", node);
     if (existing) {
+      existing.setAttribute("data-cwa-chrome", "1");
       handleEl = existing;
       return;
     }
@@ -501,6 +550,7 @@
       "aria-label": "Resize sidebar",
       title: "Drag to resize sidebar",
       tabIndex: 0,
+      "data-cwa-chrome": "1",
     });
     handleEl.addEventListener("pointerdown", onHandlePointerDown);
     handleEl.addEventListener("pointermove", onHandlePointerMove);
@@ -674,6 +724,7 @@
         "aria-label": "Conversation minimap",
         title: "Jump to a mounted message",
         tabIndex: 0,
+        "data-cwa-chrome": "1",
       });
       strip.addEventListener("click", onMinimapClick);
       strip.addEventListener("keydown", onMinimapKeyDown);
@@ -681,7 +732,25 @@
     } else if (!strip.isConnected) {
       (document.body || document.documentElement).appendChild(strip);
     }
+    strip.setAttribute("data-cwa-chrome", "1");
     scheduleMinimap();
+  }
+
+  function unmountMinimap() {
+    var strip = document.getElementById(NS + "-minimap");
+    if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
+    if (minimapScroller && minimapScroller.classList) {
+      minimapScroller.classList.remove(NS + "-scroller");
+    }
+    minimapMessages = [];
+    minimapScroller = null;
+    if (scheduler && typeof scheduler.cancel === "function") {
+      scheduler.cancel("minimap");
+    }
+    if (rafMinimap) {
+      cancelAnimationFrame(rafMinimap);
+      rafMinimap = 0;
+    }
   }
 
   function focusComposer() {
@@ -712,11 +781,13 @@
   function closePalette() {
     var backdrop = document.getElementById(NS + "-palette-backdrop");
     var dialog = document.getElementById(NS + "-palette");
+    var input = document.getElementById(NS + "-palette-input");
     if (backdrop) backdrop.hidden = true;
     if (dialog) {
       dialog.hidden = true;
       dialog.setAttribute("aria-hidden", "true");
     }
+    if (input) input.setAttribute("aria-expanded", "false");
     var trigger = qs("." + NS + "-toolbar [data-cwa-action='palette']");
     if (trigger) {
       trigger.setAttribute("aria-expanded", "false");
@@ -750,7 +821,10 @@
       frag.appendChild(item);
     });
     replaceKids(list, frag);
-    list.setAttribute("aria-activedescendant", paletteFiltered[0] ? NS + "-opt-" + paletteFiltered[0].id : "");
+    var input = document.getElementById(NS + "-palette-input");
+    if (input) {
+      input.setAttribute("aria-activedescendant", paletteFiltered[0] ? NS + "-opt-" + paletteFiltered[0].id : "");
+    }
   }
 
   function highlightPalette() {
@@ -758,9 +832,9 @@
     items.forEach(function (item, i) {
       item.setAttribute("aria-selected", i === paletteIndex ? "true" : "false");
     });
-    var list = document.getElementById(NS + "-palette-list");
+    var input = document.getElementById(NS + "-palette-input");
     var active = paletteFiltered[paletteIndex];
-    if (list) list.setAttribute("aria-activedescendant", active ? NS + "-opt-" + active.id : "");
+    if (input) input.setAttribute("aria-activedescendant", active ? NS + "-opt-" + active.id : "");
     if (items[paletteIndex] && items[paletteIndex].scrollIntoView) {
       items[paletteIndex].scrollIntoView({ block: "nearest" });
     }
@@ -833,6 +907,7 @@
     renderPaletteList("");
     if (input) {
       input.value = "";
+      input.setAttribute("aria-expanded", "true");
       input.focus();
     }
   }
@@ -880,22 +955,31 @@
   }
 
   function mountPalette() {
-    if (!document.getElementById(NS + "-palette-backdrop")) {
+    var existingBackdrop = document.getElementById(NS + "-palette-backdrop");
+    if (!existingBackdrop) {
       var backdrop = el("div", {
         id: NS + "-palette-backdrop",
         className: NS + "-palette-backdrop",
+        "data-cwa-chrome": "1",
       });
       backdrop.hidden = true;
       backdrop.addEventListener("click", closePalette);
       (document.body || document.documentElement).appendChild(backdrop);
+    } else {
+      existingBackdrop.setAttribute("data-cwa-chrome", "1");
     }
-    if (document.getElementById(NS + "-palette")) return;
+    var existingDialog = document.getElementById(NS + "-palette");
+    if (existingDialog) {
+      existingDialog.setAttribute("data-cwa-chrome", "1");
+      return;
+    }
     var dialog = el("div", {
       id: NS + "-palette",
       className: NS + "-palette",
       role: "dialog",
       "aria-modal": "true",
       "aria-labelledby": NS + "-palette-title",
+      "data-cwa-chrome": "1",
     });
     dialog.hidden = true;
     dialog.setAttribute("aria-hidden", "true");
@@ -909,8 +993,12 @@
       id: NS + "-palette-input",
       className: NS + "-palette-input",
       type: "search",
+      role: "combobox",
       "aria-label": "Filter commands",
       "aria-controls": NS + "-palette-list",
+      "aria-autocomplete": "list",
+      "aria-expanded": "false",
+      "aria-activedescendant": "",
       autocomplete: "off",
       spellcheck: "false",
       placeholder: "Filter commands",
@@ -942,34 +1030,46 @@
         role: "status",
         "aria-live": "polite",
         "aria-atomic": "true",
+        "data-cwa-chrome": "1",
       });
       node.hidden = true;
       (document.body || document.documentElement).appendChild(node);
     } else if (!node.isConnected) {
       (document.body || document.documentElement).appendChild(node);
     }
+    node.setAttribute("data-cwa-chrome", "1");
     return node;
   }
 
   function onExportStatus(event) {
+    if (event.target && event.target !== window) return;
     var node = mountExportStatus();
     var detail = (event && event.detail) || {};
     var text = formatExportStatus(detail);
-    node.textContent = text;
+    if (!text) {
+      node.hidden = true;
+      node.textContent = "";
+      return;
+    }
     node.setAttribute("data-ok", detail.ok ? "true" : "false");
     node.setAttribute("data-code", detail.code || "");
-    node.hidden = !text;
+    node.hidden = false;
+    node.textContent = text;
   }
 
   function mountToolbar() {
     var bar = document.getElementById(NS + "-toolbar");
-    if (bar && bar.isConnected) return bar;
+    if (bar && bar.isConnected) {
+      bar.setAttribute("data-cwa-chrome", "1");
+      return bar;
+    }
     if (!bar) {
       bar = el("div", {
         id: NS + "-toolbar",
         className: NS + "-toolbar",
         role: "toolbar",
         "aria-label": "cwa thread actions",
+        "data-cwa-chrome": "1",
       });
       var buttons = [
         { action: "copy", label: "Copy visible thread", event: EVENTS.copy, text: "Copy" },
@@ -996,16 +1096,9 @@
         bar.appendChild(btn);
       });
     }
+    bar.setAttribute("data-cwa-chrome", "1");
     (document.body || document.documentElement).appendChild(bar);
     return bar;
-  }
-
-  function isTypingTarget(node) {
-    if (!node || node === document.body) return false;
-    var tag = (node.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    if (node.isContentEditable) return true;
-    return false;
   }
 
   function onGlobalKeyDown(event) {
@@ -1018,6 +1111,7 @@
       }
       return;
     }
+    if (isTypingTarget(event.target)) return;
     var mod = event.metaKey || event.ctrlKey;
     if (!mod || !event.shiftKey) return;
     if (key === "f" || key === "F") return;
@@ -1096,7 +1190,8 @@
     }
   }
 
-  function onMutations() {
+  function onMutations(records) {
+    if (shouldIgnoreMutations(records)) return;
     if (scheduler) {
       scheduler.schedule("mutate", onSpaNavigate, { kind: "timeout", delay: 80 });
       return;
@@ -1153,13 +1248,9 @@
               lifecycle.enterSafe(snap.reason);
             }
             if (scheduler && typeof scheduler.cancel === "function") {
-              scheduler.cancel("minimap");
               scheduler.cancel("sidebar-resize");
             }
-            if (rafMinimap) {
-              cancelAnimationFrame(rafMinimap);
-              rafMinimap = 0;
-            }
+            unmountMinimap();
             if (rafSidebar) {
               cancelAnimationFrame(rafSidebar);
               rafSidebar = 0;

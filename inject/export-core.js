@@ -925,33 +925,76 @@
     };
   }
 
-  function isFetchableUrl(url) {
-    return /^https?:\/\//i.test(url) || /^\/(?!\/)/.test(url);
-  }
-
   function isForbiddenMediaPath(pathname) {
     var path = String(pathname || "");
+    try {
+      path = decodeURIComponent(path);
+    } catch (err) {
+      /* retain the undecoded path for best-effort policy checks */
+    }
+    path = path.toLowerCase().replace(/\/+/g, "/");
     return path.indexOf("/backend-api/") === 0 ||
       path.indexOf("/api/auth/") === 0;
   }
 
-  function isAllowedMediaUrl(url, origin) {
+  function mediaUrlDecision(url, origin) {
     var href = String(url || "");
     var parsed;
-    if (!isFetchableUrl(href)) {
-      return false;
+    var page;
+    var sameOrigin;
+    var fixtureCdn;
+    var isAbsolute = /^https?:\/\//i.test(href);
+    var isRootRelative = /^\/(?!\/)/.test(href);
+    if (!isAbsolute && !isRootRelative) {
+      return { allowed: false, reason: "unsupported_scheme" };
     }
     try {
-      parsed = /^\/(?!\/)/.test(href)
-        ? new URL(href, origin || "http://localhost")
+      if (isRootRelative && !origin) {
+        return { allowed: false, reason: "invalid_url" };
+      }
+      parsed = isRootRelative
+        ? new URL(href, origin)
         : new URL(href);
     } catch (err) {
-      return false;
+      return { allowed: false, reason: "invalid_url" };
     }
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return false;
+      return { allowed: false, reason: "unsupported_scheme" };
     }
-    return !isForbiddenMediaPath(parsed.pathname);
+    if (parsed.username || parsed.password) {
+      return { allowed: false, reason: "invalid_url" };
+    }
+    page = null;
+    if (origin) {
+      try {
+        page = new URL(origin);
+      } catch (err) {
+        page = null;
+      }
+    }
+    if (isRootRelative && !page) {
+      return { allowed: false, reason: "invalid_url" };
+    }
+    sameOrigin = Boolean(
+      page &&
+      parsed.protocol === page.protocol &&
+      parsed.hostname === page.hostname &&
+      parsed.port === page.port
+    );
+    fixtureCdn = parsed.protocol === "https:" &&
+      parsed.hostname === "files.oaiusercontent.com" &&
+      parsed.port === "";
+    if (!sameOrigin && !fixtureCdn) {
+      return { allowed: false, reason: "disallowed_host" };
+    }
+    if (isForbiddenMediaPath(parsed.pathname)) {
+      return { allowed: false, reason: "forbidden_endpoint" };
+    }
+    return { allowed: true, href: parsed.href };
+  }
+
+  function isAllowedMediaUrl(url, origin) {
+    return mediaUrlDecision(url, origin).allowed;
   }
 
   function mediaOrigin(root, fallback) {
@@ -983,6 +1026,35 @@
     return out;
   }
 
+  function hasCssHiddenAncestor(el) {
+    var node = el;
+    var view;
+    var style;
+    var display;
+    var visibility;
+    var opacity;
+    while (node && node.nodeType === ELEMENT_NODE) {
+      if (node.hidden || (node.hasAttribute && node.hasAttribute("hidden"))) {
+        return true;
+      }
+      view = node.ownerDocument && node.ownerDocument.defaultView;
+      style = view && typeof view.getComputedStyle === "function"
+        ? view.getComputedStyle(node)
+        : node.style;
+      display    = String((style && style.display) || "").toLowerCase();
+      visibility = String((style && style.visibility) || "").toLowerCase();
+      opacity    = String((style && style.opacity) || "").trim();
+      if (display === "none" ||
+          visibility === "hidden" ||
+          visibility === "collapse" ||
+          (opacity !== "" && Number(opacity) === 0)) {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   function collectVisibleFileCards(root, origin, forbiddenItems) {
     var out = [];
     var scope;
@@ -991,6 +1063,7 @@
     var el;
     var href;
     var name;
+    var decision;
     if (!root || !root.querySelectorAll) {
       return out;
     }
@@ -1012,16 +1085,22 @@
     }
     for (i = 0; i < links.length; i += 1) {
       el = links[i];
-      if (el.closest && el.closest("nav, .cwa-toolbar, .cwa-palette, .cwa-minimap, .cwa-export-status")) {
+      if (el.closest && el.closest(
+        "nav, [data-cwa-chrome], .cwa-toolbar, .cwa-palette, .cwa-minimap, .cwa-export-status"
+      )) {
+        continue;
+      }
+      if (hasCssHiddenAncestor(el)) {
         continue;
       }
       href = el.getAttribute("href") || "";
-      if (!href || !isFetchableUrl(href)) {
+      if (!href) {
         continue;
       }
-      if (!isAllowedMediaUrl(href, origin)) {
+      decision = mediaUrlDecision(href, origin);
+      if (!decision.allowed) {
         if (forbiddenItems) {
-          forbiddenItems.push({ url: href, reason: "forbidden_endpoint" });
+          forbiddenItems.push({ url: href, reason: decision.reason });
         }
         continue;
       }
@@ -1197,17 +1276,36 @@
     var doc = deps && deps.document;
     var Ev;
     var event;
-    Ev = (win && win.CustomEvent) || (typeof CustomEvent === "function" ? CustomEvent : null);
+    Ev = (win && win.CustomEvent) ||
+      (doc && doc.defaultView && doc.defaultView.CustomEvent) ||
+      (typeof CustomEvent === "function" ? CustomEvent : null);
     if (!Ev) {
       return;
     }
     event = new Ev("cwa:export-status", { bubbles: true, detail: detail });
     if (win && typeof win.dispatchEvent === "function") {
       win.dispatchEvent(event);
+    } else if (doc && typeof doc.dispatchEvent === "function") {
+      doc.dispatchEvent(event);
     }
-    if (doc && typeof doc.dispatchEvent === "function" && doc !== win) {
-      doc.dispatchEvent(new Ev("cwa:export-status", { bubbles: true, detail: detail }));
+  }
+
+  function responseContentLength(res) {
+    var raw;
+    var size;
+    if (!res || !res.headers || typeof res.headers.get !== "function") {
+      return null;
     }
+    try {
+      raw = res.headers.get("content-length");
+    } catch (err) {
+      return null;
+    }
+    if (raw == null || !/^\d+$/.test(String(raw).trim())) {
+      return null;
+    }
+    size = Number(raw);
+    return Number.isFinite(size) ? size : null;
   }
 
   async function collectAndFetchMedia(thread, fetchImpl, options) {
@@ -1221,12 +1319,29 @@
     var signal   = options.signal;
     var origin   = mediaOrigin(options.root, options.origin);
     var started  = nowMs(clock);
+    var deadline = started + maxMs;
+    var setTimeoutImpl = options.setTimeout ||
+      (global && typeof global.setTimeout === "function" ? global.setTimeout : null);
+    var clearTimeoutImpl = options.clearTimeout ||
+      (global && typeof global.clearTimeout === "function" ? global.clearTimeout : null);
+    var abortControllerFactory = options.abortControllerFactory || function () {
+      return global && typeof global.AbortController === "function"
+        ? new global.AbortController()
+        : null;
+    };
     var candidates;
     var seen  = {};
     var list  = [];
     var i;
     var item;
     var url;
+    var decision;
+    var requestUrl;
+    var fetchResult;
+    var blobResult;
+    var responseDecision;
+    var parsedResponseUrl;
+    var declaredSize;
     var files       = [];
     var rewrites    = {};
     var fetchedUrls = [];
@@ -1238,6 +1353,15 @@
     var name;
     var size;
     var timedOut = false;
+    var cancelled = false;
+    var timeoutId = null;
+    var stopKind  = "";
+    var stopResolve;
+    var stopPromise = new Promise(function (resolve) {
+      stopResolve = resolve;
+    });
+    var currentController = null;
+    var onCancel;
 
     candidates = collectMediaFromMessages(thread && thread.messages)
       .concat(
@@ -1248,15 +1372,65 @@
 
     function add(entry) {
       var href = entry && entry.url;
-      if (!href || seen[href] || !isFetchableUrl(href)) {
+      var decision;
+      if (!href || seen[href]) {
         return;
       }
       seen[href] = true;
-      if (!isAllowedMediaUrl(href, origin)) {
-        skippedItems.push({ url: href, reason: "forbidden_endpoint" });
+      decision = mediaUrlDecision(href, origin);
+      if (!decision.allowed) {
+        skippedItems.push({ url: href, reason: decision.reason });
         return;
       }
-      list.push(entry);
+      list.push({
+        url : href,
+        alt : entry.alt,
+        kind: entry.kind,
+      });
+    }
+
+    function abortCurrent() {
+      if (currentController && typeof currentController.abort === "function") {
+        try {
+          currentController.abort();
+        } catch (err) {
+          /* abort is best-effort */
+        }
+      }
+    }
+
+    function stop(kind) {
+      if (stopKind) {
+        return;
+      }
+      stopKind = kind;
+      timedOut = kind === "time_cap";
+      cancelled = kind === "cancelled";
+      stopResolve({ kind: kind });
+      abortCurrent();
+    }
+
+    function safeOperation(operation) {
+      return Promise.resolve()
+        .then(operation)
+        .then(
+          function (value) {
+            return { kind: "value", value: value };
+          },
+          function (error) {
+            return { kind: "error", error: error };
+          }
+        );
+    }
+
+    function raceOperation(operation) {
+      return Promise.race([safeOperation(operation), stopPromise]);
+    }
+
+    function skipRemaining(index, reason) {
+      for (; index < list.length; index += 1) {
+        skippedItems.push({ url: list[index].url, reason: reason });
+      }
     }
 
     for (i = 0; i < candidates.length; i += 1) {
@@ -1283,58 +1457,139 @@
         cancelled   : false,
       };
     }
-    for (i = 0; i < list.length; i += 1) {
-      if (signalAborted(signal)) {
-        for (; i < list.length; i += 1) {
-          skippedItems.push({ url: list[i].url, reason: "cancelled" });
+
+    onCancel = function () {
+      stop("cancelled");
+    };
+    if (signal && typeof signal.addEventListener === "function") {
+      signal.addEventListener("abort", onCancel, { once: true });
+    }
+    if (signalAborted(signal)) {
+      stop("cancelled");
+    }
+    if (typeof setTimeoutImpl === "function" && Number.isFinite(maxMs)) {
+      timeoutId = setTimeoutImpl(function () {
+        stop("time_cap");
+      }, Math.max(0, deadline - nowMs(clock)));
+    }
+
+    try {
+      for (i = 0; i < list.length; i += 1) {
+        if (signalAborted(signal)) {
+          stop("cancelled");
         }
-        return {
-          files       : files,
-          rewrites    : rewrites,
-          failed      : failedItems.length,
-          skipped     : skippedItems.length,
-          failedItems : failedItems,
-          skippedItems: skippedItems,
-          fetchedUrls : fetchedUrls,
-          cancelled   : true,
-        };
-      }
-      if (nowMs(clock) - started > maxMs) {
-        timedOut = true;
-        for (; i < list.length; i += 1) {
-          skippedItems.push({ url: list[i].url, reason: "time_cap" });
+        if (!stopKind && nowMs(clock) >= deadline) {
+          stop("time_cap");
         }
-        break;
-      }
-      item = list[i];
-      url  = item.url;
-      if (!isAllowedMediaUrl(url, origin)) {
-        skippedItems.push({ url: url, reason: "forbidden_endpoint" });
-        continue;
-      }
-      try {
-        res = await fetchImpl(url, { credentials: "omit" });
-        if (!res || !res.ok) {
-          failedItems.push({ url: url, reason: "http_" + (res && res.status ? res.status : "0") });
+        if (stopKind) {
+          skipRemaining(i, stopKind);
+          break;
+        }
+        item = list[i];
+        url  = item.url;
+        decision = mediaUrlDecision(url, origin);
+        if (!decision.allowed) {
+          skippedItems.push({ url: url, reason: decision.reason });
           continue;
         }
-        content = await res.blob();
-        size    = blobSize(content);
-        if (size > maxEach) {
-          failedItems.push({ url: url, reason: "too_large" });
-          continue;
+        requestUrl = decision.href;
+        try {
+          currentController = abortControllerFactory();
+          fetchResult = await raceOperation(function () {
+            return fetchImpl(requestUrl, {
+              credentials: "omit",
+              redirect   : "error",
+              signal     : currentController && currentController.signal,
+            });
+          });
+          if (fetchResult.kind === "time_cap" || fetchResult.kind === "cancelled") {
+            skipRemaining(i, fetchResult.kind);
+            break;
+          }
+          if (fetchResult.kind === "error") {
+            failedItems.push({ url: url, reason: "network" });
+            continue;
+          }
+          res = fetchResult.value;
+          if (res && (res.redirected === true || res.type === "opaqueredirect")) {
+            failedItems.push({ url: url, reason: "redirected_response" });
+            continue;
+          }
+          if (!res || !res.ok) {
+            failedItems.push({ url: url, reason: "http_" + (res && res.status ? res.status : "0") });
+            continue;
+          }
+          if (typeof res.url !== "string" || !res.url.trim()) {
+            failedItems.push({ url: url, reason: "invalid_response_url" });
+            continue;
+          }
+          try {
+            parsedResponseUrl = new URL(res.url);
+          } catch (err) {
+            failedItems.push({ url: url, reason: "invalid_response_url" });
+            continue;
+          }
+          responseDecision = mediaUrlDecision(parsedResponseUrl.href, origin);
+          if (!responseDecision.allowed) {
+            failedItems.push({
+              url   : url,
+              reason: responseDecision.reason,
+            });
+            continue;
+          }
+          declaredSize = responseContentLength(res);
+          if (declaredSize != null && declaredSize > maxEach) {
+            abortCurrent();
+            failedItems.push({ url: url, reason: "too_large" });
+            continue;
+          }
+          if (declaredSize != null && declaredSize > maxTotal - totalBytes) {
+            abortCurrent();
+            skippedItems.push({ url: url, reason: "size_cap" });
+            continue;
+          }
+          blobResult = await raceOperation(function () {
+            return res.blob();
+          });
+          if (blobResult.kind === "time_cap" || blobResult.kind === "cancelled") {
+            skipRemaining(i, blobResult.kind);
+            break;
+          }
+          if (blobResult.kind === "error") {
+            failedItems.push({ url: url, reason: "network" });
+            continue;
+          }
+          content = blobResult.value;
+          size    = blobSize(content);
+          if (size > maxEach) {
+            failedItems.push({ url: url, reason: "too_large" });
+            continue;
+          }
+          if (totalBytes + size > maxTotal) {
+            skippedItems.push({ url: url, reason: "size_cap" });
+            continue;
+          }
+          name = sanitizeMediaFilename(files.length, item.alt || "image", url, content && content.type);
+          files.push({ name: name, content: content, url: url });
+          rewrites[url] = "media/" + name;
+          fetchedUrls.push(url);
+          totalBytes += size;
+        } catch (err) {
+          if (stopKind) {
+            skipRemaining(i, stopKind);
+            break;
+          }
+          failedItems.push({ url: url, reason: "network" });
+        } finally {
+          currentController = null;
         }
-        if (totalBytes + size > maxTotal) {
-          skippedItems.push({ url: url, reason: "size_cap" });
-          continue;
-        }
-        name = sanitizeMediaFilename(files.length, item.alt || "image", url, content && content.type);
-        files.push({ name: name, content: content, url: url });
-        rewrites[url] = "media/" + name;
-        fetchedUrls.push(url);
-        totalBytes += size;
-      } catch (err) {
-        failedItems.push({ url: url, reason: "network" });
+      }
+    } finally {
+      if (timeoutId != null && typeof clearTimeoutImpl === "function") {
+        clearTimeoutImpl(timeoutId);
+      }
+      if (signal && typeof signal.removeEventListener === "function") {
+        signal.removeEventListener("abort", onCancel);
       }
     }
     return {
@@ -1345,7 +1600,7 @@
       failedItems : failedItems,
       skippedItems: skippedItems,
       fetchedUrls : fetchedUrls,
-      cancelled   : false,
+      cancelled   : cancelled,
       timedOut    : timedOut,
     };
   }
@@ -1362,6 +1617,15 @@
     var root       = deps.root || doc;
     var inflight   = Object.create(null);
     var mediaLimits = deps.mediaLimits || {};
+    var setTimeoutImpl = deps.setTimeout ||
+      (global && typeof global.setTimeout === "function" ? global.setTimeout : null);
+    var clearTimeoutImpl = deps.clearTimeout ||
+      (global && typeof global.clearTimeout === "function" ? global.clearTimeout : null);
+    var abortControllerFactory = deps.abortControllerFactory || function () {
+      return global && typeof global.AbortController === "function"
+        ? new global.AbortController()
+        : null;
+    };
 
     function snapshot(extra) {
       extra = extra || {};
@@ -1480,6 +1744,7 @@
       var name;
       var i;
       var mediaFiles;
+      var archiveFiles;
       var saved;
       var partial;
       if (blocked) {
@@ -1497,11 +1762,14 @@
           return fail("save-zip", "unsupported_route");
         }
         media = await collectAndFetchMedia(thread, fetchImpl, {
-          limits: mediaLimits,
-          clock : clock,
-          signal: deps.signal,
-          root  : root,
-          origin: loc.origin,
+          limits                : mediaLimits,
+          clock                 : clock,
+          signal                : deps.signal,
+          root                  : root,
+          origin                : loc.origin,
+          setTimeout            : setTimeoutImpl,
+          clearTimeout          : clearTimeoutImpl,
+          abortControllerFactory: abortControllerFactory,
         });
         if (media.cancelled && signalAborted(deps.signal)) {
           return fail("save-zip", "cancelled", {
@@ -1545,6 +1813,9 @@
         for (i = 0; i < media.files.length; i += 1) {
           zip.file("media/" + media.files[i].name, media.files[i].content);
         }
+        archiveFiles = zip.files
+          ? Object.keys(zip.files)
+          : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles);
         blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
         name = slugifyFilename(thread.title, thread.exportedAt) + ".zip";
         saved = download(blob, name, doc);
@@ -1557,7 +1828,7 @@
             markdown : chatMd,
             manifest : manifest,
             manifestObject: manifestObject,
-            files    : zip.files ? Object.keys(zip.files) : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles),
+            files    : archiveFiles,
           });
         }
         partial = media.failed > 0 || media.skipped > 0;
@@ -1576,7 +1847,7 @@
           skippedMedia  : media.skippedItems,
           partial       : partial,
           formats       : ["md", "zip"],
-          files         : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles),
+          files         : archiveFiles,
           manifest      : manifest,
           manifestObject: manifestObject,
           markdown      : chatMd,
@@ -1616,6 +1887,7 @@
     collectVisibleThread      : collectVisibleThread,
     inspectExportSignals      : inspectExportSignals,
     isForbiddenMediaPath      : isForbiddenMediaPath,
+    mediaUrlDecision          : mediaUrlDecision,
     isAllowedMediaUrl         : isAllowedMediaUrl,
     collectMediaFromMessages  : collectMediaFromMessages,
     collectVisibleFileCards   : collectVisibleFileCards,

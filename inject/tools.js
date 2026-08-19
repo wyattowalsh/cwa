@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
 
-  var CATALOG = [
+  var CATALOG = Object.freeze([
     {
       id      : "copy-visible",
       title   : "Copy visible thread",
@@ -30,7 +30,9 @@
       action  : "diagnostics",
       keywords: "safe mode selectors",
     },
-  ];
+  ].map(function (item) {
+    return Object.freeze(item);
+  }));
 
   function catalog() {
     return CATALOG.map(function (item) {
@@ -65,7 +67,7 @@
   }
 
   function run(id, context) {
-    var item = find(id);
+    var item = api.find(id);
     var diag;
     var snap;
     context = context || {};
@@ -80,14 +82,15 @@
     }
     if (item.action === "diagnostics") {
       diag = global.CwaDiagnostics;
-      snap = diag && typeof diag.snapshot === "function"
-        ? diag.snapshot({
-          probe     : context.probe || {},
-          lifecycle : context.lifecycle || {},
-          safeMode  : context.safeMode || {},
-          href      : context.href || "",
-        })
-        : { schema: "cwa.diagnostics.v1", error: "diagnostics_unavailable" };
+      if (!diag || typeof diag.snapshot !== "function") {
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
+      snap = diag.snapshot({
+        probe     : context.probe || {},
+        lifecycle : context.lifecycle || {},
+        safeMode  : context.safeMode || {},
+        href      : context.href || "",
+      });
       if (diag && typeof diag.emit === "function") {
         diag.emit({ window: context.window || global }, snap);
       }

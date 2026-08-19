@@ -55,18 +55,32 @@
   }
 
   function assertSafePayload(payload) {
-    payload = payload || {};
+    var keys;
     var key;
-    for (key in payload) {
-      if (!Object.prototype.hasOwnProperty.call(payload, key)) {
-        continue;
-      }
-      if (/cookie|authorization|bearer|token|accessToken|conversationJson|headers/i.test(key)) {
+    var filename;
+    var blob;
+    payload = payload || {};
+    keys = Object.keys(payload);
+    if (keys.indexOf("filename") === -1 || keys.indexOf("blob") === -1) {
+      return { ok: false, error: "invalid_payload" };
+    }
+    filename = sanitizeFilename(payload.filename);
+    blob = payload.blob;
+    if (
+      !filename ||
+      !blob ||
+      (typeof global.Blob === "function" && !(blob instanceof global.Blob)) ||
+      (keys.indexOf("mime") !== -1 && typeof payload.mime !== "string")
+    ) {
+      return { ok: false, error: "invalid_payload" };
+    }
+    for (key = 0; key < keys.length; key += 1) {
+      if (keys[key] !== "filename" && keys[key] !== "blob" && keys[key] !== "mime") {
         return { ok: false, error: "forbidden_field" };
       }
     }
-    if (!sanitizeFilename(payload.filename) || !payload.blob) {
-      return { ok: false, error: "invalid_payload" };
+    if (filename.toLowerCase() === "conversation.json") {
+      return { ok: false, error: "forbidden_filename" };
     }
     return { ok: true };
   }
