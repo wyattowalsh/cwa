@@ -28,3 +28,9 @@ running the tests; the Tauri build only packages them.
 
 ### Run
 - The built binary is `node_modules/.pnpm/pake-cli@*/node_modules/pake-cli/src-tauri/target/release/pake-cwa`. Launch it on the VM display, e.g. `DISPLAY=:1 <binary>`. Without a logged-in session `chatgpt.com` shows a Cloudflare "verify you are human" / login page — that is expected. The injected `Copy / MD / ZIP / Cmd` toolbar rendering in the top-right confirms the `inject/` layer is active.
+
+### `wyattowalsh/agents` plugin + MCPHub (provisioned by the environment, not this repo)
+- The environment **install** step provisions the [`wyattowalsh/agents`](https://github.com/wyattowalsh/agents) plugin onto disk (baked into the build snapshot): 67 skills under `~/.agents/skills/`, the full plugin bundle at `~/.cursor/plugins/local/agents/`, and 3 MCPHub HTTP MCP groups in `~/.cursor/mcp.json` (`harness`, `candidate-corpus`, `nlm`). None of this is committed to the `cwa` tree.
+- The environment **start** step launches the MCPHub control plane (`@samanhappy/mcphub`) on `127.0.0.1:46683` in the background via `~/.cursor/plugins/local/agents/scripts/mcphub/up.sh`. Health: `curl -fsS http://127.0.0.1:46683/health`; startup is async (~30–60s to connect its MCP servers).
+- Cursor discovers skills/MCP only at **session start**, so these become active for a *new* agent session, not mid-run. The MCP groups authenticate with `Authorization: Bearer ${env:MCPHUB_BEARER_TOKEN}` — set `MCPHUB_BEARER_TOKEN` as an environment secret so the server and Cursor share the same token. Optional per-server keys (`BRAVE_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `CONTEXT7_API_KEY`, gmail OAuth, …) light up the credentialed MCP servers; without them those specific servers stay disconnected (expected).
+- To disable MCPHub autostart, remove the `start` command in the environment settings; the on-disk skills/bundle remain.
