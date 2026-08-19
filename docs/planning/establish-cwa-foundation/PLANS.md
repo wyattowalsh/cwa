@@ -406,10 +406,11 @@ Late exclusive-file inject fixes after the schema/validator commit.
 | --- | --- | --- |
 | Native save timeout cleared on success and sync throw | `inject/native-bridge.js` | **PASS** |
 | Sync export throws emit failure and release inflight | `inject/export.js` | **PASS** |
+| Sidebar styles restored when the candidate unmounts | `inject/chrome.js` | **PASS** |
 
 ```text
 pnpm test
-  Vitest: 11 files, 137 tests passed
+  Vitest: 11 files, 138 tests passed
   node --test inject/chrome.test.js: 13 passed
 
 python3 scripts/validate_planning.py --runtime
