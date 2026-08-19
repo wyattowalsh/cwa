@@ -548,4 +548,42 @@ describe("chrome runtime isolation", () => {
       runtime.window.close();
     }
   });
+
+  it("keeps document sidebar hits while scoping message probes to main", () => {
+    const bounds = () => ({
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    });
+    const runtime = bootChrome({
+      url: "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+      setup(_window, document) {
+        const sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = bounds;
+        document.body.appendChild(sidebar);
+        const decoy = document.createElement("div");
+        decoy.setAttribute("data-message-author-role", "assistant");
+        decoy.getBoundingClientRect = bounds;
+        document.body.appendChild(decoy);
+        document.body.appendChild(document.createElement("main"));
+      },
+    });
+
+    try {
+      runtime.flushAll();
+      expect(runtime.window.CwaChrome.runtime().lifecycle).toBe("ready");
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+      expect(runtime.document.getElementById("cwa-minimap")).toBeNull();
+      expect(runtime.window.CwaChrome.runtime().lifecycle).toBe("safe");
+    } finally {
+      runtime.window.close();
+    }
+  });
 });

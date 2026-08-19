@@ -124,10 +124,13 @@
         Promise.resolve().then(function () {
           return exporter[method]();
         }).then(function () {
+          /* exporter emits its own success/failure status */
+        }, function () {
+          emitFailure(action);
+        }).then(function () {
           inflight[action] = false;
         }, function () {
           inflight[action] = false;
-          emitFailure(action);
         });
       };
     }

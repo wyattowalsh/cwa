@@ -456,6 +456,11 @@
 
   function conversationTitle(doc) {
     var raw = "";
+    var pane;
+    var headings;
+    var i;
+    var heading;
+    var text;
     if (doc && typeof doc.title === "string") {
       raw = doc.title.trim();
     }
@@ -463,9 +468,17 @@
     if (raw && !/^chatgpt$/i.test(raw)) {
       return raw;
     }
-    var heading = doc && doc.querySelector && doc.querySelector("h1");
-    if (heading && cleanText(heading.textContent)) {
-      return cleanText(heading.textContent);
+    pane = findConversationMain(doc);
+    headings = pane && pane.querySelectorAll ? pane.querySelectorAll("h1") : [];
+    for (i = 0; i < headings.length; i += 1) {
+      heading = headings[i];
+      if (hasCssHiddenAncestor(heading)) {
+        continue;
+      }
+      text = cleanText(visibleText(heading));
+      if (text) {
+        return text;
+      }
     }
     return "Untitled conversation";
   }

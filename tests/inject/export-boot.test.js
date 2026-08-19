@@ -232,4 +232,38 @@ describe("export page-world boot", () => {
       runtime.window.close();
     }
   });
+
+  it("releases inflight even when failure status dispatch throws", async () => {
+    const runtime = bootExport();
+
+    try {
+      runtime.scriptWindow.CwaExport.saveMarkdown = vi.fn(() => {
+        throw new Error("boom");
+      });
+      runtime.window.addEventListener("cwa:export-status", () => {
+        throw new Error("status listener failed");
+      });
+
+      const first = {};
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-md", {
+        detail: first,
+      }));
+      expect(first.handled).toBe(true);
+      await vi.waitFor(() => {
+        expect(runtime.scriptWindow.CwaExport.saveMarkdown).toHaveBeenCalledTimes(1);
+      });
+
+      runtime.scriptWindow.CwaExport.saveMarkdown = vi.fn(() => Promise.resolve({ ok: true }));
+      const second = {};
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-md", {
+        detail: second,
+      }));
+      await vi.waitFor(() => {
+        expect(runtime.scriptWindow.CwaExport.saveMarkdown).toHaveBeenCalledTimes(1);
+      });
+      expect(second.handled).toBe(true);
+    } finally {
+      runtime.window.close();
+    }
+  });
 });

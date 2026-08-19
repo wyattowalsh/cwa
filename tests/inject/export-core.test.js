@@ -543,6 +543,32 @@ describe("collectVisibleThread", () => {
     expect(serialized).not.toContain("STALE_SECRET");
   });
 
+  it("uses a visible in-main heading instead of a hidden stale h1", () => {
+    document.body.replaceChildren();
+    document.title = "ChatGPT";
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<h1>OFF_THREAD_TITLE</h1>
+      <main hidden>
+        <h1>STALE_TITLE</h1>
+        <div data-message-author-role="assistant"><p>stale</p></div>
+      </main>
+      <main>
+        <h1>VISIBLE_TITLE <span hidden>HIDDEN_TITLE</span></h1>
+        <div data-message-author-role="user"><p>VISIBLE_USER</p></div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+
+    expect(thread.title).toBe("VISIBLE_TITLE");
+    expect(thread.title).not.toContain("STALE_TITLE");
+    expect(thread.title).not.toContain("OFF_THREAD_TITLE");
+    expect(thread.title).not.toContain("HIDDEN_TITLE");
+  });
+
   it("skips system and tool roles", () => {
     document.body.replaceChildren();
     const wrap = document.createElement("div");

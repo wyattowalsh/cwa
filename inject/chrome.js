@@ -1364,6 +1364,25 @@
     window.addEventListener("hashchange", onNavigate);
   }
 
+  function overlayThreadProbe(sel, probe, pane) {
+    var names = ["message", "thinking", "citation", "fileCard"];
+    var i;
+    var resolved;
+    if (!pane || !probe || !sel || typeof sel.resolve !== "function") {
+      return probe;
+    }
+    for (i = 0; i < names.length; i += 1) {
+      resolved = sel.resolve(pane, names[i]);
+      probe[names[i]] = {
+        hit     : resolved.hit,
+        selector: resolved.selector,
+        count   : resolved.count,
+        critical: resolved.critical,
+      };
+    }
+    return probe;
+  }
+
   function refreshCompatibility() {
     var sel = global.CwaSelectors;
     var probe;
@@ -1372,7 +1391,7 @@
       lifecycle.noteHref(window.location.href);
     }
     if (sel && typeof sel.probe === "function") {
-      probe = sel.probe(conversationMain() || document);
+      probe = overlayThreadProbe(sel, sel.probe(document), conversationMain());
       if (
         safeModeApi &&
         typeof safeModeApi.observe === "function" &&

@@ -194,6 +194,22 @@ def check_shape(root: Path) -> list[str]:
         errors.append("pake.json and pake.cwa.json inject lists differ")
     if len(pake_injects) == 2:
         inject = pake_injects["pake.json"]
+        expected_inject = [
+            "./inject/theme.css",
+            "./inject/selectors.js",
+            "./inject/scheduler.js",
+            "./inject/lifecycle.js",
+            "./inject/safe-mode.js",
+            "./inject/diagnostics.js",
+            "./inject/tools.js",
+            "./inject/native-bridge.js",
+            "./inject/chrome.js",
+            "./inject/vendor/jszip.min.js",
+            "./inject/export-core.js",
+            "./inject/export.js",
+        ]
+        if inject != expected_inject:
+            errors.append("pake inject order must match the Wave 2-5 boot sequence")
         tools_index = next(
             (index for index, entry in enumerate(inject) if "tools.js" in str(entry)),
             None,
