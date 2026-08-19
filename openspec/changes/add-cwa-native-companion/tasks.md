@@ -4,6 +4,8 @@ Execute **TASK-030 through TASK-039** in this sibling change. Wave 1 remains fro
 
 Status legend: `[ ]` pending · `[x]` implementation artifact present · command evidence lives in `docs/planning/establish-cwa-foundation/PLANS.md`.
 
+RV-R-003 correction: TASK-032–033 are Blob-only: a non-Blob `blob` is `invalid_payload`, any extra key is `forbidden_field`, and `conversation.json` is `forbidden_filename`; invalid envelopes never invoke the host. `__cwaNative` remains directly callable by page-world code, and no native host or sidecar ships.
+
 ## Wave 3 — optional native companion (TASK-030–039)
 
 - [x] **TASK-030** Add `inject/native-bridge.js` with protocol identifier `cwa.native.v1` and an optional `global.__cwaNative` host boundary.

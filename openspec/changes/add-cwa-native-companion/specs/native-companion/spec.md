@@ -20,23 +20,35 @@ CWA SHALL use protocol `cwa.native.v1` only when `global.__cwaNative.saveFile` i
 
 ### Requirement: Native payload is local-file-only
 
-CWA SHALL send only a sanitized filename, local Blob or bytes, and MIME type across the native boundary. Payloads containing cookie, Authorization, bearer, token, header, or conversation JSON fields SHALL be rejected before host invocation.
+CWA SHALL accept only own enumerable `filename`, Blob `blob`, and optional `mime` fields for a CWA-owned native save call. Any extra field SHALL return `forbidden_field`; a missing or invalid filename or non-Blob `blob` SHALL return `invalid_payload`; and a sanitized filename equal to `conversation.json`, case-insensitively, SHALL return `forbidden_filename`. An invalid envelope SHALL NOT invoke the host.
 
 #### Scenario: Forbidden field
 
-- **WHEN** a native save payload contains a `cookie` or `token` field
+- **WHEN** a native save payload contains any extra field, including `cookie`, `token`, or `bytes`
 - **THEN** `saveFile` returns `forbidden_field`
+- **AND** `__cwaNative.saveFile` is not called
+
+#### Scenario: Bytes are not a Blob
+
+- **WHEN** the `blob` field contains bytes rather than a Blob and the envelope has no extra fields
+- **THEN** `saveFile` returns `invalid_payload`
+- **AND** `__cwaNative.saveFile` is not called
+
+#### Scenario: Conversation JSON filename
+
+- **WHEN** the sanitized filename is `conversation.json`, regardless of case
+- **THEN** `saveFile` returns `forbidden_filename`
 - **AND** `__cwaNative.saveFile` is not called
 
 #### Scenario: Allowed local file
 
 - **WHEN** a valid `chat.md` Blob is offered to an available host
-- **THEN** the host receives only the local file payload
+- **THEN** the host receives only `filename`, `blob`, and optional `mime`
 - **AND** the bridge reports protocol `cwa.native.v1` with `via` set to `native`
 
 ### Requirement: No native sidecar is implied
 
-This change SHALL define a page-world protocol boundary only. It SHALL NOT ship a native binary, add a native dependency, or grant the companion access to ChatGPT cookies, tokens, private APIs, or hidden conversation state.
+This change SHALL define validation for CWA-owned page-world calls only. It SHALL NOT ship a native host or sidecar, add a native dependency, or grant the companion access to ChatGPT cookies, tokens, private APIs, or hidden conversation state. Because page-world scripts can call `__cwaNative.saveFile` directly, the envelope SHALL NOT be described as a sandbox or as the host’s security boundary.
 
 #### Scenario: Browser-only installation
 

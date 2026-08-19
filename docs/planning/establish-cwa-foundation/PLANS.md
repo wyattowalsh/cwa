@@ -108,7 +108,7 @@ Wave 1 export no longer issues private conversation or session fetches. This his
 | TASK-040 | `inject/tools.js` catalog | **PASS** — `copy-visible`, `save-md`, `save-zip`, `diagnostics` |
 | TASK-041 | Existing export event dispatch | **PASS** — adapters emit `cwa:copy` / `cwa:save-md` / `cwa:save-zip` |
 | TASK-042 | Redacted diagnostics adapter | **PASS** — `CwaDiagnostics.snapshot` + `cwa:diagnostics` |
-| TASK-043 | Unknown/unhandled tool errors | **PASS** — `unknown_tool` / `event_unavailable` |
+| TASK-043 | Unknown/unhandled tool errors | **PASS** — `unknown_tool` / `event_unavailable` / `unhandled_tool`; missing diagnostics snapshot is `diagnostics_unavailable` |
 | TASK-044 | `inject/chrome.js` palette integration | **PASS** — palette IDs from `CwaTools.catalog()`; `CwaTools.run` |
 | TASK-045 | `tools/catalog.yaml` | **PASS** — policy `no default network` |
 | TASK-046 | Local-only adapter boundary | **PASS** — no fetch in `tools.js` |
@@ -156,6 +156,52 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
   inject/: no hits
   tests/: negative-test comments + regex + concatenated path in export.test.js (allowed)
   openspec/, docs/, scripts/validate_planning.py: documentation / forbidden-pattern list (allowed)
+
+git diff --check
+  clean
+```
+
+## Review hardening (RV-R-001–011)
+
+Contracts: `docs/planning/review-hardening/contracts.md`. Plan: `docs/planning/review-hardening/PLAN.md`.
+
+| Finding | Evidence | Result |
+| --- | --- | --- |
+| RV-R-001 | `mediaUrlDecision` same-origin or exact `files.oaiusercontent.com`; `redirect: "error"`; `res.url` recheck before `blob()` | **PASS** |
+| RV-R-002 | Injectable deadline; per-request AbortController; hang-first duplicate ZIP still passes | **PASS** |
+| RV-R-003 | Native key allowlist; extra `bytes` is `forbidden_field`; `conversation.json` is `forbidden_filename` | **PASS** |
+| RV-R-004 | Chrome-owned MutationObserver batches ignored | **PASS** |
+| RV-R-005 | Resolved sidebar must pass geometry `height>120`, `width>40`, `left<280` | **PASS** |
+| RV-R-006 | Safe mode unmounts `#cwa-minimap` | **PASS** |
+| RV-R-007 | `isTypingTarget` gates Cmd/Ctrl+Shift+C/S/K | **PASS** |
+| RV-R-008 | `emitStatus` dispatches once; chrome ignores `target !== window`; live region unhidden before text | **PASS** |
+| RV-R-009 | `result.files` is `Object.keys(zip.files)`; FakeZip `file()` captured | **PASS** |
+| RV-R-010 | CSS-hidden file-cards omitted; `media.workflow` remains `visible-dom` | **PASS** |
+| RV-R-011 | Specs/ADR/`validation-report` aligned; TASK-043 three codes | **PASS** |
+
+### Review-hardening executed commands
+
+```text
+pnpm test
+  Vitest: 10 files, 97 tests passed
+  node --test inject/chrome.test.js: 13 passed
+  `__CWA_CHROME_BOOTED__` remains undefined when chrome.js is required in Node
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  PASS: planning overlay (strict)
+
+diff -u pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
 
 git diff --check
   clean

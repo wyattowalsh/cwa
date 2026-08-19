@@ -32,12 +32,30 @@ The diagnostics adapter SHALL use the compatibility runtime’s redacted snapsho
 - **THEN** the result identifies `hrefKind` as `settings`
 - **AND** the emitted snapshot contains no provider credential or conversation payload
 
-### Requirement: Unknown tools fail closed
+### Requirement: Tool execution failures are explicit
 
-An id absent from the catalog SHALL return `unknown_tool` and SHALL NOT dispatch an event, invoke diagnostics, or initiate network activity.
+An id absent from the catalog SHALL return `unknown_tool`. A cataloged export event that cannot be dispatched SHALL return `event_unavailable`; a missing or invalid diagnostics snapshot provider SHALL return `diagnostics_unavailable`; and a catalog entry without a supported event or action SHALL return `unhandled_tool`. These failures SHALL NOT initiate network activity.
 
 #### Scenario: Unknown id
 
 - **WHEN** `CwaTools.run("not-cataloged")` is invoked
 - **THEN** the result is `{ ok: false, error: "unknown_tool" }`
+- **AND** no local action is executed
+
+#### Scenario: Export event unavailable
+
+- **WHEN** a cataloged export adapter runs without a usable event dispatcher
+- **THEN** the result is `{ ok: false, error: "event_unavailable" }`
+- **AND** no export event is dispatched
+
+#### Scenario: Diagnostics unavailable
+
+- **WHEN** the diagnostics adapter runs without a usable snapshot provider
+- **THEN** the result is `{ ok: false, error: "diagnostics_unavailable" }`
+- **AND** no diagnostics event is emitted
+
+#### Scenario: Catalog entry has no adapter
+
+- **WHEN** a catalog entry has neither a supported event nor a supported action
+- **THEN** the result is `{ ok: false, error: "unhandled_tool" }`
 - **AND** no local action is executed
