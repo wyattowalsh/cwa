@@ -91,11 +91,12 @@
     global.CwaExport = exporter;
 
     function emitFailure(action) {
-      var Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
-      if (!Ev || typeof global.dispatchEvent !== "function") {
-        return;
-      }
+      var Ev;
       try {
+        Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+        if (!Ev || typeof global.dispatchEvent !== "function") {
+          return;
+        }
         global.dispatchEvent(new Ev("cwa:export-status", {
           bubbles: true,
           detail : {
@@ -120,10 +121,13 @@
           return;
         }
         inflight[action] = true;
-        Promise.resolve(exporter[method]()).then(function () {}, function () {
-          emitFailure(action);
-        }).finally(function () {
+        Promise.resolve().then(function () {
+          return exporter[method]();
+        }).then(function () {
           inflight[action] = false;
+        }, function () {
+          inflight[action] = false;
+          emitFailure(action);
         });
       };
     }

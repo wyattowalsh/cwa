@@ -190,4 +190,46 @@ describe("export page-world boot", () => {
       runtime.window.close();
     }
   });
+
+  it("contains synchronous export failures and clears the in-flight guard", async () => {
+    const runtime = bootExport();
+    const statuses = [];
+
+    try {
+      runtime.window.addEventListener("cwa:export-status", (event) => {
+        statuses.push(event.detail);
+      });
+      runtime.scriptWindow.CwaExport.saveMarkdown = vi.fn(() => {
+        throw new Error("boom");
+      });
+
+      const first = {};
+      expect(() => {
+        runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-md", {
+          detail: first,
+        }));
+      }).not.toThrow();
+      expect(first.handled).toBe(true);
+      await vi.waitFor(() => {
+        expect(statuses).toContainEqual(expect.objectContaining({
+          action: "save-md",
+          ok    : false,
+          code  : "error",
+        }));
+      });
+
+      runtime.scriptWindow.CwaExport.saveMarkdown = vi.fn(() => Promise.resolve({ ok: true }));
+      const second = {};
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-md", {
+        detail: second,
+      }));
+      expect(second.handled).toBe(true);
+      await vi.waitFor(() => {
+        expect(runtime.scriptWindow.CwaExport.saveMarkdown).toHaveBeenCalledTimes(1);
+      });
+      expect(statuses).not.toContainEqual(expect.objectContaining({ code: "duplicate" }));
+    } finally {
+      runtime.window.close();
+    }
+  });
 });
