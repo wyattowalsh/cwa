@@ -505,3 +505,41 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 7 (compat probe scope + title + inflight)
+
+Re-audit on `22ae10d`. Round 6 probed all selectors inside conversation `main`, which made the real left sidebar look like a miss. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Compat probe used `main` for sidebar/composer | `inject/chrome.js` | **PASS** |
+| Hidden/off-thread `h1` became the export title | `inject/export-core.js` | **PASS** |
+| Export inflight clear could be skipped if status emit rejected | `inject/export.js` | **PASS** |
+| Pake inject order not pinned beyond tools-before-chrome | `scripts/validate_planning.py` | **PASS** |
+
+### Wave-assurance round 7 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 157 tests passed
+  node --test inject/chrome.test.js: 13 passed
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+
+diff -q pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```
