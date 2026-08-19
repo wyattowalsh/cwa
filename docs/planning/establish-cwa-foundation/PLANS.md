@@ -543,3 +543,45 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 8 (hidden-text, native TOCTOU, chrome drag/safe remount)
+
+Re-audit on `00bd89c`. Leftover P1/P2 from the round-7 fan-out: closed-`<details>` / `aria-hidden` leaks, native `saveFile` getter TOCTOU, chrome drag vs `syncSidebar`, safe-mode never remounting, ZIP provenance after media await, and empty `--runtime` scans. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Hidden-text leak (closed details, aria-hidden, inert, clip) | `inject/export-core.js` | **PASS** |
+| Stale-but-visible first `main` won | `inject/export-core.js`, `inject/chrome.js` | **PASS** |
+| Manifest URL/gaps re-read after media await | `inject/export-core.js` | **PASS** |
+| Native `saveFile` getter TOCTOU + `conversation.json.` | `inject/native-bridge.js` | **PASS** |
+| Browser fallback after `native_error` double-save | `inject/export.js` | **PASS** |
+| Sidebar snap during drag; safe mode never remounts | `inject/chrome.js`, `inject/safe-mode.js` | **PASS** |
+| Diagnostics emit not confirmed delivered | `inject/tools.js` | **PASS** |
+| Empty `--runtime` scan / nested JSON `.get` crash | `scripts/validate_planning.py` | **PASS** |
+
+### Wave-assurance round 8 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 176 tests passed
+  node --test inject/chrome.test.js: 13 passed
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+
+diff -q pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```
