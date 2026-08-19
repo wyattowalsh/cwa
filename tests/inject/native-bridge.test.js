@@ -89,8 +89,24 @@ describe("CwaNativeBridge", () => {
     expect(host.saveFile).not.toHaveBeenCalled();
   });
 
-  it("rejects a bytes-only payload without a blob", () => {
-    expect(bridge.assertSafePayload({ filename: "cwa.md", bytes: new Uint8Array([1]) })).toEqual({
+  it("rejects a bytes-only payload as a forbidden field without calling the host", async () => {
+    const host = {
+      saveFile: vi.fn(async () => ({ ok: true })),
+    };
+    await expect(
+      bridge.saveFile(
+        { filename: "cwa.md", bytes: new Uint8Array([1]) },
+        { __cwaNative: host }
+      )
+    ).resolves.toEqual({
+      ok   : false,
+      error: "forbidden_field",
+    });
+    expect(host.saveFile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing blob without extra fields as invalid_payload", () => {
+    expect(bridge.assertSafePayload({ filename: "cwa.md" })).toEqual({
       ok   : false,
       error: "invalid_payload",
     });

@@ -52,19 +52,6 @@ REQUIRED_FILES = (
     "docs/adr/0007-native-companion-fail-closed.md",
 )
 
-INJECT_RUNTIME = (
-    "inject/export-core.js",
-    "inject/export.js",
-    "inject/chrome.js",
-    "inject/selectors.js",
-    "inject/scheduler.js",
-    "inject/lifecycle.js",
-    "inject/safe-mode.js",
-    "inject/diagnostics.js",
-    "inject/tools.js",
-    "inject/native-bridge.js",
-)
-
 FORBIDDEN_RUNTIME = (
     r"/backend-api/conversation",
     r"/backend-api/conversations",
@@ -91,6 +78,17 @@ def fail(errors: list[str]) -> int:
         print(f"FAIL: {item}", file=sys.stderr)
     print(f"{len(errors)} error(s)", file=sys.stderr)
     return 1
+
+
+def derive_inject_runtime(root: Path) -> list[Path]:
+    inject_root = root / "inject"
+    return sorted(
+        path
+        for path in inject_root.rglob("*.js")
+        if path.is_file()
+        and "vendor" not in path.relative_to(inject_root).parts
+        and not path.name.endswith(".test.js")
+    )
 
 
 def check_shape(root: Path) -> list[str]:
@@ -190,6 +188,12 @@ def check_strict(root: Path) -> list[str]:
                     "detail": "Older turns may be virtualized.",
                 }
             ],
+            "media": {
+                "workflow": "visible-dom",
+                "included": 0,
+                "failed": [],
+                "skipped": [],
+            },
             "officialExport": "https://help.openai.com/en/articles/7260999-how-do-i-export-my-chatgpt-history-and-data",
         }
         try:
@@ -203,16 +207,22 @@ def check_strict(root: Path) -> list[str]:
             errors.append("schema unexpectedly accepted conversation.json file entry")
         except Exception:
             pass
+        bad_nested = dict(sample)
+        bad_nested["files"] = ["chat.md", "media/conversation.json"]
+        try:
+            jsonschema.validate(bad_nested, schema)
+            errors.append("schema unexpectedly accepted media/conversation.json file entry")
+        except Exception:
+            pass
     return errors
 
 
 def check_runtime(root: Path) -> list[str]:
     errors: list[str] = []
     compiled = [(pat, re.compile(pat)) for pat in FORBIDDEN_RUNTIME]
-    for rel in INJECT_RUNTIME:
-        path = root / rel
+    for path in derive_inject_runtime(root):
+        rel = path.relative_to(root).as_posix()
         if not path.is_file():
-            errors.append(f"missing runtime file {rel}")
             continue
         text = path.read_text(encoding="utf-8")
         for pat, rx in compiled:

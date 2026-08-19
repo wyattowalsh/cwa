@@ -240,6 +240,48 @@ describe("createExporter", () => {
     });
   });
 
+  it("deduplicates absolute image and relative file-card URLs by canonical href", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://chatgpt.com/files/abc" alt="inline file">
+          <a data-testid="file-card" href="/files/abc">file card</a>
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://chatgpt.com/files/abc",
+      expect.objectContaining({ credentials: "omit", redirect: "error" })
+    );
+    expect(result.mediaCount).toBe(1);
+    expect(result.files.filter((path) => path.startsWith("media/"))).toHaveLength(1);
+  });
+
+  it("records one skipped media item for the same denied image and file card", async () => {
+    const deniedUrl = "https://attacker.example/denied.png";
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="${deniedUrl}" alt="denied">
+          <a download="denied.png" href="${deniedUrl}">denied file</a>
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.skippedMedia).toEqual([
+      { url: deniedUrl, reason: "disallowed_host" },
+    ]);
+  });
+
   it.each([
     "https://attacker.example/file.png",
     "https://files.oaiusercontent.com.attacker.example/file.png",
@@ -393,6 +435,31 @@ describe("createExporter", () => {
       ])
     );
     expect(privateFetches(fetchImpl)).toEqual([]);
+  });
+
+  it("does not collect or archive an image under a CSS-hidden ancestor", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <p>Visible response</p>
+          <section style="display: none">
+            <img src="https://files.oaiusercontent.com/hidden.png" alt="hidden">
+          </section>
+        </div>
+      </main>`
+    );
+    const hidden = makeExporter();
+    const thread = hidden.snapshot();
+
+    expect(thread.messages).toHaveLength(1);
+    expect(thread.messages[0].blocks.some((block) => block.type === "image")).toBe(false);
+
+    const result = await hidden.saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(result.mediaCount).toBe(0);
+    expect(result.files.some((path) => path.startsWith("media/"))).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("records failed visible media and still writes Markdown", async () => {
@@ -694,6 +761,25 @@ describe("createExporter", () => {
     const cancelled = makeExporter({ signal });
     await expect(cancelled.saveZip()).resolves.toMatchObject({ ok: false, error: "cancelled" });
     expect(privateFetches(fetchImpl)).toEqual([]);
+  });
+
+  it("returns cancelled without downloading when aborted during ZIP generation", async () => {
+    const signal = { aborted: false };
+    function CancellingZip() {
+      FakeZip.call(this);
+    }
+    CancellingZip.prototype = Object.create(FakeZip.prototype);
+    CancellingZip.prototype.constructor = CancellingZip;
+    CancellingZip.prototype.generateAsync = async function generateAsync() {
+      signal.aborted = true;
+      return new Blob(["ZIP"], { type: "application/zip" });
+    };
+
+    const cancelled = makeExporter({ signal, JSZip: CancellingZip });
+    const result = await cancelled.saveZip();
+
+    expect(result).toEqual({ ok: false, error: "cancelled" });
+    expect(downloads).toEqual([]);
   });
 
   it("serializes a prompt-injected cookie request as visible text only", async () => {

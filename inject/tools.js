@@ -57,13 +57,18 @@
   }
 
   function emit(name, root) {
+    var detail = { source: "tools" };
     root = root || global;
     var Ev = root.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
     if (!Ev || typeof root.dispatchEvent !== "function") {
       return false;
     }
-    root.dispatchEvent(new Ev(name, { bubbles: true, detail: { source: "tools" } }));
-    return true;
+    try {
+      root.dispatchEvent(new Ev(name, { bubbles: true, detail: detail }));
+    } catch (_error) {
+      return false;
+    }
+    return detail.handled === true;
   }
 
   function run(id, context) {
@@ -85,12 +90,19 @@
       if (!diag || typeof diag.snapshot !== "function") {
         return { ok: false, error: "diagnostics_unavailable" };
       }
-      snap = diag.snapshot({
-        probe     : context.probe || {},
-        lifecycle : context.lifecycle || {},
-        safeMode  : context.safeMode || {},
-        href      : context.href || "",
-      });
+      try {
+        snap = diag.snapshot({
+          probe     : context.probe || {},
+          lifecycle : context.lifecycle || {},
+          safeMode  : context.safeMode || {},
+          href      : context.href || "",
+        });
+      } catch (_error) {
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
+      if (snap == null) {
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
       if (diag && typeof diag.emit === "function") {
         diag.emit({ window: context.window || global }, snap);
       }

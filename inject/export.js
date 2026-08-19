@@ -91,7 +91,10 @@
     global.CwaExport = exporter;
 
     function run(action, method) {
-      return function () {
+      return function (event) {
+        if (event && event.detail && typeof event.detail === "object") {
+          event.detail.handled = true;
+        }
         if (inflight[action]) {
           emitDuplicate(action);
           return;

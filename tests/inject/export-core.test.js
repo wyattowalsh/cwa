@@ -4,6 +4,9 @@ import core from "@cwa/export-core";
 
 const FIXED_ISO = "2026-08-18T16:00:00.000Z";
 const FIXTURE = readFileSync("tests/fixtures/visible-thread.html", "utf8");
+const MANIFEST_SCHEMA = JSON.parse(
+  readFileSync("schemas/export-manifest.schema.json", "utf8")
+);
 
 describe("yaml frontmatter", () => {
   it("quotes title, url, and exported_at and escapes quotes", () => {
@@ -88,6 +91,17 @@ describe("serializeThreadToMarkdown", () => {
 
     expect(md).toContain("````md\nuse ``` inside\n````");
   });
+
+  it("preserves consecutive blank lines inside fenced code blocks", () => {
+    const md = core.serializeThreadToMarkdown({
+      messages: [{
+        role  : "assistant",
+        blocks: [{ type: "code", language: "txt", text: "first\n\n\nlast" }],
+      }],
+    }, { frontmatter: false, notice: false });
+
+    expect(md).toContain("```txt\nfirst\n\n\nlast\n```");
+  });
 });
 
 describe("gap manifest", () => {
@@ -166,6 +180,13 @@ describe("url and filename helpers", () => {
     expect(core.parseConversationIdFromUrl("https://chatgpt.com/")).toBeNull();
   });
 
+  it("does not treat the new-conversation route as a conversation id", () => {
+    expect(core.parseConversationIdFromUrl("https://chatgpt.com/c/new")).toBeNull();
+    expect(core.parseConversationIdFromUrl("https://chatgpt.com/c/new/")).toBeNull();
+    expect(core.isSupportedExportRoute("https://chatgpt.com/c/new", 0)).toBe(false);
+    expect(core.isSupportedExportRoute("https://chatgpt.com/c/new", 1)).toBe(true);
+  });
+
   it("treats a conversation URL or mounted messages as a supported export route", () => {
     expect(
       core.isSupportedExportRoute(
@@ -231,6 +252,18 @@ describe("url and filename helpers", () => {
       core.mediaUrlDecision("https://user:secret@chatgpt.com/file", "https://chatgpt.com")
     ).toEqual({ allowed: false, reason: "invalid_url" });
     expect(core.isAllowedMediaUrl("/files/output.csv", "https://chatgpt.com")).toBe(true);
+  });
+});
+
+describe("export manifest schema", () => {
+  it("requires media and rejects conversation.json at any archive depth", () => {
+    const filePattern = MANIFEST_SCHEMA.properties.files.items.not.pattern;
+
+    expect(MANIFEST_SCHEMA.required).toContain("media");
+    expect(MANIFEST_SCHEMA.properties.media.properties.workflow.enum).toEqual(["visible-dom"]);
+    expect(new RegExp(filePattern).test("conversation.json")).toBe(true);
+    expect(new RegExp(filePattern).test("media/conversation.json")).toBe(true);
+    expect(new RegExp(filePattern).test("media/conversation.json.txt")).toBe(false);
   });
 });
 

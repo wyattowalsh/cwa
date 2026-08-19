@@ -42,7 +42,7 @@
 | TASK-016 | `cwa:export-status` live region in `chrome.js` / `theme.css`; `formatExportStatus` | copy / md / partial / jszip_missing / duplicate / cancelled / clipboard_denied / download_denied / unsupported_route |
 | TASK-017 | denial tests | clipboard_denied, download_denied, jszip_missing, unsupported_route, prompt-injected “export cookies” — no cookie getter, no auth headers |
 | TASK-018 | commands below | **PASS** |
-| TASK-019 | Reassessment | Export boundary is clean. **Stop. Do not start TASK-020 in this run.** Next dependency-ready work in a later change is TASK-020 (chrome compatibility runtime). |
+| TASK-019 | Reassessment | Export boundary is clean. This historical gate cleared Wave 2; Waves 2–5 and review hardening are now complete, and the foundation remains frozen. |
 
 ### TASK-018 executed commands
 
@@ -69,7 +69,7 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 
 ## TASK-019 recommendation
 
-Wave 1 export no longer issues private conversation or session fetches. This historical gate cleared Wave 2 as a sibling change; TASK-001–019 remain frozen.
+Wave 1 export no longer issues private conversation or session fetches. This historical gate cleared Wave 2 as a sibling change; Waves 2–5 and review hardening are complete, and there are no unchecked foundation tasks. New work requires an explicit change.
 
 ## Wave 2 evidence (TASK-020–029)
 
@@ -213,3 +213,52 @@ git diff --check
 - jsonschema `--strict` validation of a live sample (package not installed; do not install)
 - Pake runtime / `pake:install` / `/Applications`
 - Live ChatGPT account fixtures
+
+## Wave assurance (post-merge on main)
+
+Independent per-wave audit on `main`, then exclusive-file fixes. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Canonical media/skip URL dedupe (TASK-053) | `inject/export-core.js` | **PASS** |
+| CSS-hidden message images omitted | `inject/export-core.js` | **PASS** |
+| `/c/new` is not a conversation id | `inject/export-core.js` | **PASS** |
+| Fence-safe blank-line collapse | `inject/export-core.js` | **PASS** |
+| Abort after ZIP `generateAsync` | `inject/export-core.js` | **PASS** |
+| Manifest `media` required; nested `conversation.json` forbidden | `schemas/export-manifest.schema.json` | **PASS** |
+| `cwa-scroller` class added only once | `inject/chrome.js` | **PASS** |
+| `recover()` cannot exit `safe` | `inject/lifecycle.js` | **PASS** |
+| Extra native keys checked first (`bytes` → `forbidden_field`) | `inject/native-bridge.js` | **PASS** |
+| Export events set `detail.handled`; tools require it | `inject/export.js` / `inject/tools.js` | **PASS** |
+| Isolated `export.js` native fallback tests | `tests/inject/export-boot.test.js` | **PASS** |
+| Runtime scan derived from `inject/*.js` (excl. vendor/tests) | `scripts/validate_planning.py` | **PASS** |
+
+Discarded (not defects vs frozen specs): class selectors with combinators; clipboard `execCommand` fallback; emitting `native_unavailable` on successful browser fallback.
+
+### Wave-assurance executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 114 tests passed
+  node --test inject/chrome.test.js: 13 passed
+  `__CWA_CHROME_BOOTED__` remains undefined when chrome.js is required in Node
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  PASS: planning overlay (strict)
+
+diff -u pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```

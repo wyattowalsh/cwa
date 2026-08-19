@@ -1,3 +1,3 @@
 # Continuation
 
-Verify HEAD/worktree and read `docs/planning/establish-cwa-foundation/PLANS.md`. Resume the first unchecked dependency-ready task. Stop before Wave 2 unless TASK-018 passed and TASK-019 recommends continuation.
+Verify HEAD/worktree and read `docs/planning/establish-cwa-foundation/PLANS.md`. There is no unchecked TASK in the frozen foundation: Waves 0–5 and review hardening are complete. New work requires an explicit change before implementation.

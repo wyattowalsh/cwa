@@ -32,4 +32,36 @@ describe("CwaLifecycle", () => {
     expect(transitions).not.toContain("navigating");
     expect(transitions).not.toContain("ready");
   });
+
+  it("recovers from degraded to ready", () => {
+    const life = lifecycleMod.createLifecycle();
+    life.boot();
+    life.degrade("missing-anchor");
+
+    expect(life.recover()).toBe("ready");
+    expect(life.getState()).toBe("ready");
+  });
+
+  it("stays safe when recovery is requested", () => {
+    const life = lifecycleMod.createLifecycle();
+    const transitions = [];
+    life.boot();
+    life.enterSafe("critical-miss");
+    life.subscribe((detail) => transitions.push(detail));
+
+    expect(life.recover()).toBe("safe");
+    expect(life.getState()).toBe("safe");
+    expect(transitions).toEqual([]);
+  });
+
+  it("does nothing when recovery is requested while ready", () => {
+    const life = lifecycleMod.createLifecycle();
+    const transitions = [];
+    life.boot();
+    life.subscribe((detail) => transitions.push(detail));
+
+    expect(life.recover()).toBe("ready");
+    expect(life.getState()).toBe("ready");
+    expect(transitions).toEqual([]);
+  });
 });

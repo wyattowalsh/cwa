@@ -12,7 +12,8 @@
     "exportedAt",
     "formats",
     "files",
-    "limitations"
+    "limitations",
+    "media"
   ],
   "properties": {
     "schema": {
@@ -53,10 +54,10 @@
       "items": {
         "type": "string",
         "not": {
-          "const": "conversation.json"
+          "pattern": "(^|/)conversation\\.json$"
         }
       },
-      "description": "Archive entry paths. chat.md and MANIFEST.md are required; conversation.json is forbidden."
+      "description": "Archive entry paths. chat.md and MANIFEST.md are required; any path with the basename conversation.json is forbidden."
     },
     "limitations": {
       "type": "array",

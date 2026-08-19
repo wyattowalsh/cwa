@@ -82,11 +82,17 @@ function propertyDescriptor(object, name) {
 }
 
 describe("chrome runtime isolation", () => {
-  it("removes the minimap and scroller class when safe mode activates", () => {
+  it("adds the scroller class once across rebuilds and removes it in safe mode", () => {
     let main;
+    let scrollerClassAdds = 0;
     const runtime = bootChrome({
       setup(_window, document) {
         main = document.createElement("main");
+        const classListAdd = main.classList.add.bind(main.classList);
+        main.classList.add = (...tokens) => {
+          if (tokens.includes("cwa-scroller")) scrollerClassAdds += 1;
+          return classListAdd(...tokens);
+        };
         const message = document.createElement("div");
         message.setAttribute("data-message-author-role", "assistant");
         message.getBoundingClientRect = () => ({
@@ -106,6 +112,13 @@ describe("chrome runtime isolation", () => {
       runtime.flushFrames();
       expect(runtime.document.getElementById("cwa-minimap")).not.toBeNull();
       expect(main.classList.contains("cwa-scroller")).toBe(true);
+      expect(scrollerClassAdds).toBe(1);
+
+      runtime.window.dispatchEvent(new runtime.window.Event("resize"));
+      runtime.flushFrames();
+
+      expect(main.classList.contains("cwa-scroller")).toBe(true);
+      expect(scrollerClassAdds).toBe(1);
 
       runtime.enterSafeMode();
 

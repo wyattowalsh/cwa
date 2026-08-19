@@ -61,6 +61,11 @@
     var blob;
     payload = payload || {};
     keys = Object.keys(payload);
+    for (key = 0; key < keys.length; key += 1) {
+      if (keys[key] !== "filename" && keys[key] !== "blob" && keys[key] !== "mime") {
+        return { ok: false, error: "forbidden_field" };
+      }
+    }
     if (keys.indexOf("filename") === -1 || keys.indexOf("blob") === -1) {
       return { ok: false, error: "invalid_payload" };
     }
@@ -73,11 +78,6 @@
       (keys.indexOf("mime") !== -1 && typeof payload.mime !== "string")
     ) {
       return { ok: false, error: "invalid_payload" };
-    }
-    for (key = 0; key < keys.length; key += 1) {
-      if (keys[key] !== "filename" && keys[key] !== "blob" && keys[key] !== "mime") {
-        return { ok: false, error: "forbidden_field" };
-      }
     }
     if (filename.toLowerCase() === "conversation.json") {
       return { ok: false, error: "forbidden_filename" };

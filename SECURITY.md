@@ -1,4 +1,4 @@
-# Security model (Wave 1)
+# Security model (Waves 0–5)
 
 - Provider DOM is untrusted. Prompt text cannot authorize local actions (cookie export, endpoint calls).
 - Visible-thread ZIP must not include cookies, authorization headers, session storage, or other-thread data.

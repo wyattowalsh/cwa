@@ -1,10 +1,10 @@
 # Start here
 
-**Purpose:** orient contributors and agents to the current repository and the active hardening change.
-**Status:** Wave 1 export hardening (TASK-001 through TASK-019).
+**Purpose:** orient contributors and agents to the completed CWA foundation and its frozen planning record.
+**Status:** Waves 0–5 (TASK-001 through TASK-059) plus review hardening (RV-R-001 through RV-R-011) are implemented; the foundation is frozen.
 **Baseline:** `wyattowalsh/cwa@6da172fbc9d44f956f525813810e875a3579b270`.
 
-The original ChatGPT planning ZIP was not present in this checkout. This overlay is the adopted OpenSpec/planning tree reconstructed from that bundle's kickoff, tasks, export spec, and validators so Wave 1 can execute against the real repository. Repository evidence outranks summaries.
+The original ChatGPT planning ZIP was not present in this checkout. This overlay is the adopted OpenSpec/planning tree reconstructed from that bundle's kickoff, tasks, export spec, and validators. Waves 0–5 and review hardening are complete; repository evidence outranks summaries.
 
 ## Read order
 
@@ -21,4 +21,4 @@ The original ChatGPT planning ZIP was not present in this checkout. This overlay
 
 ## Stop conditions
 
-Stop rather than improvising when a task requires an undocumented provider API, real account/session data, a dependency upgrade, native/tool/media expansion, or commit/push/PR/install without approval.
+Stop rather than improvising when work lacks an explicit change or requires an undocumented provider API, real account/session data, a dependency upgrade, or commit/push/PR/install without approval.

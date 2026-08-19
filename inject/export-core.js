@@ -127,6 +127,48 @@
     return ticks + lang + "\n" + body + "\n" + ticks;
   }
 
+  function collapseBlankLinesOutsideFences(value) {
+    var lines = String(value == null ? "" : value).split("\n");
+    var out = [];
+    var fenceChar = "";
+    var fenceLength = 0;
+    var blankOutside = false;
+    var i;
+    var line;
+    var marker;
+    var closing;
+    for (i = 0; i < lines.length; i += 1) {
+      line = lines[i];
+      if (fenceChar) {
+        out.push(line);
+        closing = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+        if (closing &&
+            closing[1].charAt(0) === fenceChar &&
+            closing[1].length >= fenceLength) {
+          fenceChar = "";
+          fenceLength = 0;
+          blankOutside = false;
+        }
+        continue;
+      }
+      if (/^[ \t]*$/.test(line)) {
+        if (!blankOutside) {
+          out.push(line);
+        }
+        blankOutside = true;
+        continue;
+      }
+      out.push(line);
+      blankOutside = false;
+      marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (marker) {
+        fenceChar = marker[1].charAt(0);
+        fenceLength = marker[1].length;
+      }
+    }
+    return out.join("\n");
+  }
+
   function toBlockquote(text) {
     var body = cleanText(text);
     if (!body) {
@@ -194,7 +236,7 @@
       lines.push("");
     }
 
-    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return collapseBlankLinesOutsideFences(lines.join("\n")).trim();
   }
 
   function serializeThreadToMarkdown(thread, options) {
@@ -227,7 +269,7 @@
       }
       parts.push(serializeMessageToMarkdown(messages[i]));
     }
-    return (parts.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n");
+    return (collapseBlankLinesOutsideFences(parts.join("\n")).trim() + "\n");
   }
 
   function detectExportGaps(signals) {
@@ -380,6 +422,10 @@
     } catch (err) {
       return null;
     }
+    path = path.split(/[?#]/)[0];
+    if (/\/c\/new\/?$/i.test(path)) {
+      return null;
+    }
     var uuid = path.match(UUID_RE);
     if (uuid) {
       return uuid[1];
@@ -488,6 +534,9 @@
   }
 
   function extractImage(el) {
+    if (hasCssHiddenAncestor(el)) {
+      return null;
+    }
     var src = el.getAttribute("src") || el.getAttribute("data-src") || "";
     if (!src || /^data:image\/svg/i.test(src)) {
       return null;
@@ -1330,7 +1379,9 @@
         : null;
     };
     var candidates;
+    var fileCardSkipped = [];
     var seen  = {};
+    var skippedSeen = {};
     var list  = [];
     var i;
     var item;
@@ -1366,20 +1417,36 @@
     candidates = collectMediaFromMessages(thread && thread.messages)
       .concat(
         options.root
-          ? collectVisibleFileCards(options.root, origin, skippedItems)
+          ? collectVisibleFileCards(options.root, origin, fileCardSkipped)
           : []
-      );
+      )
+      .concat(fileCardSkipped);
+
+    function pushSkipped(href, reason) {
+      var skipDecision = mediaUrlDecision(href, origin);
+      var key = skipDecision.href || String(href || "");
+      if (!key || skippedSeen[key]) {
+        return;
+      }
+      skippedSeen[key] = true;
+      skippedItems.push({ url: href, reason: reason });
+    }
 
     function add(entry) {
       var href = entry && entry.url;
       var decision;
-      if (!href || seen[href]) {
+      var key;
+      if (!href) {
         return;
       }
-      seen[href] = true;
       decision = mediaUrlDecision(href, origin);
+      key = decision.href || String(href);
+      if (seen[key]) {
+        return;
+      }
+      seen[key] = true;
       if (!decision.allowed) {
-        skippedItems.push({ url: href, reason: decision.reason });
+        pushSkipped(href, decision.reason);
         return;
       }
       list.push({
@@ -1429,7 +1496,7 @@
 
     function skipRemaining(index, reason) {
       for (; index < list.length; index += 1) {
-        skippedItems.push({ url: list[index].url, reason: reason });
+        pushSkipped(list[index].url, reason);
       }
     }
 
@@ -1438,13 +1505,13 @@
     }
     if (list.length > maxFiles) {
       for (i = maxFiles; i < list.length; i += 1) {
-        skippedItems.push({ url: list[i].url, reason: "count_cap" });
+        pushSkipped(list[i].url, "count_cap");
       }
       list = list.slice(0, maxFiles);
     }
     if (!fetchImpl) {
       for (i = 0; i < list.length; i += 1) {
-        skippedItems.push({ url: list[i].url, reason: "no_fetch" });
+        pushSkipped(list[i].url, "no_fetch");
       }
       return {
         files       : files,
@@ -1489,7 +1556,7 @@
         url  = item.url;
         decision = mediaUrlDecision(url, origin);
         if (!decision.allowed) {
-          skippedItems.push({ url: url, reason: decision.reason });
+          pushSkipped(url, decision.reason);
           continue;
         }
         requestUrl = decision.href;
@@ -1545,7 +1612,7 @@
           }
           if (declaredSize != null && declaredSize > maxTotal - totalBytes) {
             abortCurrent();
-            skippedItems.push({ url: url, reason: "size_cap" });
+            pushSkipped(url, "size_cap");
             continue;
           }
           blobResult = await raceOperation(function () {
@@ -1566,7 +1633,7 @@
             continue;
           }
           if (totalBytes + size > maxTotal) {
-            skippedItems.push({ url: url, reason: "size_cap" });
+            pushSkipped(url, "size_cap");
             continue;
           }
           name = sanitizeMediaFilename(files.length, item.alt || "image", url, content && content.type);
@@ -1817,6 +1884,9 @@
           ? Object.keys(zip.files)
           : ["chat.md", "MANIFEST.md", "manifest.json"].concat(mediaFiles);
         blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+        if (signalAborted(deps.signal)) {
+          return fail("save-zip", "cancelled");
+        }
         name = slugifyFilename(thread.title, thread.exportedAt) + ".zip";
         saved = download(blob, name, doc);
         if (saved && typeof saved.then === "function") {

@@ -2,6 +2,7 @@ schema: spec-driven
 project: cwa
 active_change: establish-cwa-foundation
 context: |
-  Browser-only Pake MVP. The Wave 0–1 foundation is frozen.
-  Sibling changes own compatibility runtime, optional native protocol,
-  local tool adapters, and visible-DOM media workflows (TASK-020–059).
+  Browser-only Pake MVP. Waves 0–5 (TASK-001–059) and review hardening
+  (RV-R-001–011) are complete, and the foundation is frozen.
+  The active change name identifies the frozen foundation record.
+  New work requires an explicit change and must preserve established boundaries.

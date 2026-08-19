@@ -70,7 +70,7 @@
     }
 
     function recover() {
-      if (state === STATES.safe || state === STATES.degraded) {
+      if (state === STATES.degraded) {
         return setState(STATES.ready, "recover");
       }
       return state;

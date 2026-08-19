@@ -38,6 +38,7 @@ describe("CwaTools", () => {
       CustomEvent,
       dispatchEvent: (event) => {
         events.push(event.type);
+        event.detail.handled = true;
         return true;
       },
     };
@@ -48,8 +49,33 @@ describe("CwaTools", () => {
     expect(events).toEqual(["cwa:copy", "cwa:save-md", "cwa:save-zip"]);
   });
 
+  it("reports event_unavailable when an export event is not handled", () => {
+    const win = {
+      CustomEvent,
+      dispatchEvent: vi.fn(() => true),
+    };
+    expect(tools.run("save-md", { window: win })).toEqual({
+      ok   : false,
+      error: "event_unavailable",
+    });
+    expect(win.dispatchEvent).toHaveBeenCalledOnce();
+  });
+
   it("reports event_unavailable when the window cannot dispatch", () => {
     expect(tools.run("save-md", { window: { CustomEvent } })).toEqual({
+      ok   : false,
+      error: "event_unavailable",
+    });
+  });
+
+  it("reports event_unavailable when dispatch throws", () => {
+    const win = {
+      CustomEvent,
+      dispatchEvent: () => {
+        throw new Error("dispatch failed");
+      },
+    };
+    expect(tools.run("save-md", { window: win })).toEqual({
       ok   : false,
       error: "event_unavailable",
     });
@@ -64,6 +90,25 @@ describe("CwaTools", () => {
 
     const emit = vi.fn();
     vi.stubGlobal("CwaDiagnostics", { snapshot: null, emit });
+    expect(tools.run("diagnostics")).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
+    expect(emit).not.toHaveBeenCalled();
+
+    vi.stubGlobal("CwaDiagnostics", { snapshot: () => undefined, emit });
+    expect(tools.run("diagnostics")).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
+    expect(emit).not.toHaveBeenCalled();
+
+    vi.stubGlobal("CwaDiagnostics", {
+      snapshot: () => {
+        throw new Error("snapshot failed");
+      },
+      emit,
+    });
     expect(tools.run("diagnostics")).toEqual({
       ok   : false,
       error: "diagnostics_unavailable",

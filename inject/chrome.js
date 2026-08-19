@@ -634,7 +634,9 @@
     minimapMessages = messages;
     var scroller = findConversationScroller(messages[0]);
     minimapScroller = scroller;
-    if (scroller && scroller.classList) scroller.classList.add(NS + "-scroller");
+    if (scroller && scroller.classList && !scroller.classList.contains(NS + "-scroller")) {
+      scroller.classList.add(NS + "-scroller");
+    }
     var height = strip.clientHeight || 1;
     var contentHeight = scroller && scroller.scrollHeight ? scroller.scrollHeight : height;
     var frag = document.createDocumentFragment();
