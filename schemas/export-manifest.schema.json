@@ -66,7 +66,7 @@
       "items": {
         "type": "string",
         "not": {
-          "pattern": "(^|/)conversation\\.json$"
+          "pattern": "(^|[\\\\/])[Cc][Oo][Nn][Vv][Ee][Rr][Ss][Aa][Tt][Ii][Oo][Nn]\\.[Jj][Ss][Oo][Nn]$"
         }
       },
       "description": "Archive entry paths. chat.md and MANIFEST.md are required; any path with the basename conversation.json is forbidden."
@@ -75,6 +75,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["id", "title", "detail"],
         "properties": {
           "id": { "type": "string" },
@@ -98,6 +99,7 @@
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["url", "reason"],
             "properties": {
               "url": { "type": "string" },
@@ -109,6 +111,7 @@
           "type": "array",
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["url", "reason"],
             "properties": {
               "url": { "type": "string" },

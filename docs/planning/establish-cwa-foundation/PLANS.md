@@ -356,3 +356,44 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 4 (validator/schema hygiene)
+
+Independent per-wave re-audit on `bd264b1`, then exclusive-file fixes. No Wave 6. Runtime inject waves had no new P1 leaks.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| `--strict` is WARN when jsonschema is skipped | `scripts/validate_planning.py` | **PASS** |
+| Nested limitation/failed/skipped `additionalProperties: false` | `schemas/export-manifest.schema.json` | **PASS** |
+| `conversation.json` forbidden across `/`, `\\`, and case | `schemas/export-manifest.schema.json` | **PASS** |
+| Spec requires `SHALL NOT contain conversation.json` | `scripts/validate_planning.py` | **PASS** |
+| Non-object Pake/schema JSON fails closed without traceback | `scripts/validate_planning.py` | **PASS** |
+| In-`main` nav/chrome file-card decoys stay excluded | `tests/fixtures/visible-thread.html` | **PASS** |
+
+### Wave-assurance round 4 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 135 tests passed
+  node --test inject/chrome.test.js: 13 passed
+  `__CWA_CHROME_BOOTED__` remains undefined when chrome.js is required in Node
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+
+diff -u pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```

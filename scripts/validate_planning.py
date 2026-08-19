@@ -91,6 +91,29 @@ def derive_inject_runtime(root: Path) -> list[Path]:
     )
 
 
+def check_conversation_pattern(schema: dict[str, object], samples: tuple[str, ...]) -> list[str]:
+    errors: list[str] = []
+    properties = schema.get("properties")
+    files = properties.get("files") if isinstance(properties, dict) else None
+    items = files.get("items") if isinstance(files, dict) else None
+    exclusion = items.get("not") if isinstance(items, dict) else None
+    pattern = exclusion.get("pattern") if isinstance(exclusion, dict) else None
+    if not isinstance(pattern, str):
+        return ["schema files.items.not.pattern must forbid conversation.json"]
+    try:
+        regex = re.compile(pattern)
+    except re.error as err:
+        return [f"schema files.items.not.pattern is invalid: {err}"]
+    for sample in samples:
+        if regex.search(sample) is None:
+            errors.append(
+                f"schema files.items.not.pattern must match forbidden path {sample!r}"
+            )
+    if regex.search("media/conversation.json.txt") is not None:
+        errors.append("schema files.items.not.pattern must not match media/conversation.json.txt")
+    return errors
+
+
 def check_shape(root: Path) -> list[str]:
     errors: list[str] = []
     for rel in REQUIRED_FILES:
@@ -102,34 +125,49 @@ def check_shape(root: Path) -> list[str]:
     if schema_path.is_file():
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as err:
+        except (OSError, json.JSONDecodeError) as err:
             errors.append(f"schema JSON: {err}")
         else:
-            formats = ((schema.get("properties") or {}).get("formats") or {})
-            items = formats.get("items") or {}
-            enum = items.get("enum") or []
-            if "json" in enum:
-                errors.append("schema formats must not include json (conversation payload)")
-            files = ((schema.get("properties") or {}).get("files") or {})
-            blob = json.dumps(files)
-            if "conversation.json" not in blob:
-                errors.append("schema files must explicitly forbid conversation.json")
-            authority = (
-                ((schema.get("properties") or {}).get("source") or {})
-                .get("properties", {})
-                .get("authority", {})
-                .get("enum")
-                or []
-            )
-            if "observed-ui" not in authority or "local-cwa" not in authority:
-                errors.append("schema source.authority must allow observed-ui and local-cwa")
+            if not isinstance(schema, dict):
+                errors.append("schema JSON must be an object")
+            else:
+                formats = ((schema.get("properties") or {}).get("formats") or {})
+                items = formats.get("items") or {}
+                enum = items.get("enum") or []
+                if "json" in enum:
+                    errors.append("schema formats must not include json (conversation payload)")
+                errors.extend(
+                    check_conversation_pattern(
+                        schema,
+                        (
+                            "conversation.json",
+                            "media/conversation.json",
+                            "media\\conversation.json",
+                            "Conversation.JSON",
+                            "C:\\temp\\conversation.json",
+                        ),
+                    )
+                )
+                authority = (
+                    ((schema.get("properties") or {}).get("source") or {})
+                    .get("properties", {})
+                    .get("authority", {})
+                    .get("enum")
+                    or []
+                )
+                if "observed-ui" not in authority or "local-cwa" not in authority:
+                    errors.append("schema source.authority must allow observed-ui and local-cwa")
     if spec_path.is_file():
         spec = spec_path.read_text(encoding="utf-8")
         for needle in SPEC_MUST_CONTAIN:
             if needle not in spec:
                 errors.append(f"export spec missing {needle!r}")
-        if "includedJson" in spec and "SHALL NOT" not in spec:
+        if "includedJson" not in spec:
+            errors.append("export spec missing 'includedJson'")
+        if "SHALL NOT" not in spec:
             errors.append("export spec must forbid includedJson")
+        if re.search(r"SHALL NOT contain\s+`?conversation\.json`?", spec) is None:
+            errors.append("export spec must say SHALL NOT contain conversation.json")
     pake_paths = {rel: root / rel for rel in ("pake.json", "pake.cwa.json")}
     pake_injects: dict[str, list[object]] = {}
     for rel, path in pake_paths.items():
@@ -140,6 +178,9 @@ def check_shape(root: Path) -> list[str]:
             config = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as err:
             errors.append(f"{rel} JSON: {err}")
+            continue
+        if not isinstance(config, dict):
+            errors.append(f"{rel} JSON must be an object")
             continue
         inject = config.get("inject")
         if not isinstance(inject, list):
@@ -166,8 +207,9 @@ def check_shape(root: Path) -> list[str]:
     return errors
 
 
-def check_strict(root: Path) -> list[str]:
+def check_strict(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
+    ran = {"yaml": False, "jsonschema": False}
     try:
         import yaml  # type: ignore
     except ImportError:
@@ -181,70 +223,91 @@ def check_strict(root: Path) -> list[str]:
     if yaml is not None:
         cfg = root / "openspec/config.yaml"
         try:
-            yaml.safe_load(cfg.read_text(encoding="utf-8"))
+            text = cfg.read_text(encoding="utf-8")
+            ran["yaml"] = True
+            yaml.safe_load(text)
         except Exception as err:  # noqa: BLE001
             errors.append(f"openspec/config.yaml: {err}")
     if jsonschema is not None:
-        schema = json.loads((root / "schemas/export-manifest.schema.json").read_text(encoding="utf-8"))
-        sample = {
-            "schema": "cwa.export-manifest.v1",
-            "product": "cwa",
-            "source": {
-                "authority": "observed-ui",
-                "url": "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
-                "title": "Widget export",
-            },
-            "exportedAt": "2026-08-18T16:00:00.000Z",
-            "formats": ["md", "zip"],
-            "files": ["chat.md", "MANIFEST.md", "manifest.json"],
-            "limitations": [
-                {
-                    "id": "unloaded_messages",
-                    "title": "Unloaded messages",
-                    "detail": "Older turns may be virtualized.",
+        try:
+            schema = json.loads(
+                (root / "schemas/export-manifest.schema.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as err:
+            errors.append(f"schema JSON: {err}")
+        else:
+            if not isinstance(schema, dict):
+                errors.append("schema JSON must be an object")
+            else:
+                errors.extend(
+                    check_conversation_pattern(
+                        schema,
+                        (r"media\conversation.json", "Conversation.JSON"),
+                    )
+                )
+                sample = {
+                    "schema": "cwa.export-manifest.v1",
+                    "product": "cwa",
+                    "source": {
+                        "authority": "observed-ui",
+                        "url": "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+                        "title": "Widget export",
+                    },
+                    "exportedAt": "2026-08-18T16:00:00.000Z",
+                    "formats": ["md", "zip"],
+                    "files": ["chat.md", "MANIFEST.md", "manifest.json"],
+                    "limitations": [
+                        {
+                            "id": "unloaded_messages",
+                            "title": "Unloaded messages",
+                            "detail": "Older turns may be virtualized.",
+                        }
+                    ],
+                    "media": {
+                        "workflow": "visible-dom",
+                        "included": 0,
+                        "failed": [],
+                        "skipped": [],
+                    },
+                    "officialExport": "https://help.openai.com/en/articles/7260999-how-do-i-export-my-chatgpt-history-and-data",
                 }
-            ],
-            "media": {
-                "workflow": "visible-dom",
-                "included": 0,
-                "failed": [],
-                "skipped": [],
-            },
-            "officialExport": "https://help.openai.com/en/articles/7260999-how-do-i-export-my-chatgpt-history-and-data",
-        }
-        try:
-            jsonschema.validate(sample, schema)
-        except Exception as err:  # noqa: BLE001
-            errors.append(f"sample manifest failed schema: {err}")
-        empty_files = dict(sample)
-        empty_files["files"] = []
-        try:
-            jsonschema.validate(empty_files, schema)
-            errors.append("schema unexpectedly accepted empty files")
-        except Exception:
-            pass
-        missing_manifest = dict(sample)
-        missing_manifest["files"] = ["chat.md", "manifest.json"]
-        try:
-            jsonschema.validate(missing_manifest, schema)
-            errors.append("schema unexpectedly accepted files without MANIFEST.md")
-        except Exception:
-            pass
-        bad = dict(sample)
-        bad["files"] = ["chat.md", "conversation.json"]
-        try:
-            jsonschema.validate(bad, schema)
-            errors.append("schema unexpectedly accepted conversation.json file entry")
-        except Exception:
-            pass
-        bad_nested = dict(sample)
-        bad_nested["files"] = ["chat.md", "media/conversation.json"]
-        try:
-            jsonschema.validate(bad_nested, schema)
-            errors.append("schema unexpectedly accepted media/conversation.json file entry")
-        except Exception:
-            pass
-    return errors
+                try:
+                    ran["jsonschema"] = True
+                    jsonschema.validate(sample, schema)
+                except Exception as err:  # noqa: BLE001
+                    errors.append(f"sample manifest failed schema: {err}")
+                empty_files = dict(sample)
+                empty_files["files"] = []
+                try:
+                    jsonschema.validate(empty_files, schema)
+                    errors.append("schema unexpectedly accepted empty files")
+                except Exception:
+                    pass
+                missing_manifest = dict(sample)
+                missing_manifest["files"] = ["chat.md", "manifest.json"]
+                try:
+                    jsonschema.validate(missing_manifest, schema)
+                    errors.append("schema unexpectedly accepted files without MANIFEST.md")
+                except Exception:
+                    pass
+                for forbidden in (
+                    "conversation.json",
+                    "media/conversation.json",
+                    r"media\conversation.json",
+                    "Conversation.JSON",
+                    r"C:\temp\conversation.json",
+                ):
+                    bad = dict(sample)
+                    bad["files"] = [*sample["files"], forbidden]
+                    try:
+                        jsonschema.validate(bad, schema)
+                        errors.append(
+                            f"schema unexpectedly accepted forbidden file entry {forbidden!r}"
+                        )
+                    except Exception:
+                        pass
+    skipped = [name for name in ("yaml", "jsonschema") if not ran[name]]
+    return errors, skipped
 
 
 def check_runtime(root: Path) -> list[str]:
@@ -269,19 +332,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(args.repo).resolve()
     errors = check_shape(root)
+    skipped: list[str] = []
     if args.strict:
-        errors.extend(check_strict(root))
+        strict_errors, skipped = check_strict(root)
+        errors.extend(strict_errors)
     if args.runtime:
         errors.extend(check_runtime(root))
     if errors:
         return fail(errors)
     extras = []
-    if args.strict:
-        extras.append("strict")
     if args.runtime:
         extras.append("runtime")
+    if args.strict:
+        extras.append("strict")
     suffix = f" ({', '.join(extras)})" if extras else ""
-    print(f"PASS: planning overlay{suffix}")
+    if skipped:
+        skipped_suffix = ", ".join(f"{name} skipped" for name in skipped)
+        print(f"WARN: planning overlay ({', '.join(extras)}; {skipped_suffix})")
+    else:
+        print(f"PASS: planning overlay{suffix}")
     return 0
 
 

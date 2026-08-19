@@ -264,9 +264,8 @@ describe("url and filename helpers", () => {
 });
 
 describe("export manifest schema", () => {
-  it("requires core archive files and rejects conversation.json at any depth", () => {
+  it("requires core archive files and closes nested record shapes", () => {
     const filesSchema = MANIFEST_SCHEMA.properties.files;
-    const filePattern = filesSchema.items.not.pattern;
 
     expect(MANIFEST_SCHEMA.required).toContain("media");
     expect(MANIFEST_SCHEMA.properties.media.properties.workflow.enum).toEqual(["visible-dom"]);
@@ -274,9 +273,20 @@ describe("export manifest schema", () => {
       { contains: { const: "chat.md" } },
       { contains: { const: "MANIFEST.md" } },
     ]);
-    expect(new RegExp(filePattern).test("conversation.json")).toBe(true);
-    expect(new RegExp(filePattern).test("media/conversation.json")).toBe(true);
-    expect(new RegExp(filePattern).test("media/conversation.json.txt")).toBe(false);
+    expect(MANIFEST_SCHEMA.properties.limitations.items.additionalProperties).toBe(false);
+    expect(MANIFEST_SCHEMA.properties.media.properties.failed.items.additionalProperties).toBe(false);
+    expect(MANIFEST_SCHEMA.properties.media.properties.skipped.items.additionalProperties).toBe(false);
+  });
+
+  it("rejects the conversation.json basename across separators and case", () => {
+    const filePattern = new RegExp(MANIFEST_SCHEMA.properties.files.items.not.pattern);
+
+    expect(filePattern.test("conversation.json")).toBe(true);
+    expect(filePattern.test("media/conversation.json")).toBe(true);
+    expect(filePattern.test("media\\conversation.json")).toBe(true);
+    expect(filePattern.test("Conversation.JSON")).toBe(true);
+    expect(filePattern.test("C:\\temp\\conversation.json")).toBe(true);
+    expect(filePattern.test("media/conversation.json.txt")).toBe(false);
   });
 });
 
