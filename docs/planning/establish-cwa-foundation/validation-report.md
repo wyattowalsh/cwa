@@ -6,7 +6,7 @@ Executed 2026-08-19 against this worktree (see `PLANS.md` for tables).
 | --- | --- |
 | Overlay shape | `python3 scripts/validate_planning.py` → PASS |
 | Runtime leak | `python3 scripts/validate_planning.py --runtime` → PASS (`inject/` has no private conversation/session helpers) |
-| Unit/integration | `pnpm test` → 135 Vitest + 13 Node tests PASS |
+| Unit/integration | `pnpm test` → 137 Vitest + 13 Node tests PASS |
 | `--strict` | WARN jsonschema missing; PyYAML present; overlay line is `WARN: planning overlay (strict; jsonschema skipped)` |
 | Endpoint ripgrep | `inject/` clean. Specs, docs, validator forbidden-list, and negative tests may mention the strings. |
 

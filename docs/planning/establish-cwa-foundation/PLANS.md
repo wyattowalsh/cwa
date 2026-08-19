@@ -397,3 +397,25 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+### Wave-assurance round 4 follow-up
+
+Late exclusive-file inject fixes after the schema/validator commit.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Native save timeout cleared on success and sync throw | `inject/native-bridge.js` | **PASS** |
+| Sync export throws emit failure and release inflight | `inject/export.js` | **PASS** |
+
+```text
+pnpm test
+  Vitest: 11 files, 137 tests passed
+  node --test inject/chrome.test.js: 13 passed
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+```
