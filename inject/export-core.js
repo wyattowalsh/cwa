@@ -829,26 +829,37 @@
   function collectVisibleThread(root, options) {
     options = options || {};
     var doc = root && root.nodeType === 9 ? root : (root && root.ownerDocument) || root;
-    var searchRoot = root && root.nodeType === 9
-      ? (root.body || root.documentElement || root)
-      : (root || doc);
+    var searchArea = root || doc;
+    var searchRoot = String(root && root.tagName || "").toUpperCase() === "MAIN"
+      ? root
+      : (searchArea && searchArea.querySelector
+        ? searchArea.querySelector("main")
+        : null);
     var href = options.url || (options.location && options.location.href) || "";
     var title = options.title || conversationTitle(doc);
     var exportedAt = options.exportedAt ||
       (options.clock && options.clock.now && options.clock.now()) ||
       new Date().toISOString();
-    var nodes = searchRoot.querySelectorAll
+    var nodes = searchRoot && searchRoot.querySelectorAll
       ? Array.prototype.slice.call(searchRoot.querySelectorAll("[data-message-author-role]"))
       : [];
     var messages = [];
     var i;
     var msg;
-    if (nodes.length === 0 && searchRoot.querySelectorAll) {
+    if (nodes.length === 0 && searchRoot && searchRoot.querySelectorAll) {
       nodes = Array.prototype.slice.call(
         searchRoot.querySelectorAll('article[data-testid^="conversation-turn-"]')
       );
     }
     for (i = 0; i < nodes.length; i += 1) {
+      if (hasCssHiddenAncestor(nodes[i])) {
+        continue;
+      }
+      if (nodes[i].closest && nodes[i].closest(
+        "nav, [data-cwa-chrome], .cwa-toolbar, .cwa-palette, .cwa-minimap, .cwa-export-status"
+      )) {
+        continue;
+      }
       msg = messageFromNode(nodes[i]);
       if (msg && msg.blocks && msg.blocks.length) {
         messages.push(msg);

@@ -130,10 +130,11 @@ def check_shape(root: Path) -> list[str]:
                 errors.append(f"export spec missing {needle!r}")
         if "includedJson" in spec and "SHALL NOT" not in spec:
             errors.append("export spec must forbid includedJson")
+    pake_paths = {rel: root / rel for rel in ("pake.json", "pake.cwa.json")}
     pake_injects: dict[str, list[object]] = {}
-    for rel in ("pake.json", "pake.cwa.json"):
-        path = root / rel
+    for rel, path in pake_paths.items():
         if not path.is_file():
+            errors.append(f"missing {rel}")
             continue
         try:
             config = json.loads(path.read_text(encoding="utf-8"))
@@ -145,8 +146,23 @@ def check_shape(root: Path) -> list[str]:
             errors.append(f"{rel} inject must be a list")
             continue
         pake_injects[rel] = inject
+    if all(path.is_file() for path in pake_paths.values()):
+        if pake_paths["pake.json"].read_bytes() != pake_paths["pake.cwa.json"].read_bytes():
+            errors.append("pake.json and pake.cwa.json must be byte-identical")
     if len(pake_injects) == 2 and pake_injects["pake.json"] != pake_injects["pake.cwa.json"]:
         errors.append("pake.json and pake.cwa.json inject lists differ")
+    if len(pake_injects) == 2:
+        inject = pake_injects["pake.json"]
+        tools_index = next(
+            (index for index, entry in enumerate(inject) if "tools.js" in str(entry)),
+            None,
+        )
+        chrome_index = next(
+            (index for index, entry in enumerate(inject) if "chrome.js" in str(entry)),
+            None,
+        )
+        if tools_index is None or chrome_index is None or tools_index >= chrome_index:
+            errors.append("pake inject must list tools.js before chrome.js")
     return errors
 
 
@@ -200,6 +216,20 @@ def check_strict(root: Path) -> list[str]:
             jsonschema.validate(sample, schema)
         except Exception as err:  # noqa: BLE001
             errors.append(f"sample manifest failed schema: {err}")
+        empty_files = dict(sample)
+        empty_files["files"] = []
+        try:
+            jsonschema.validate(empty_files, schema)
+            errors.append("schema unexpectedly accepted empty files")
+        except Exception:
+            pass
+        missing_manifest = dict(sample)
+        missing_manifest["files"] = ["chat.md", "manifest.json"]
+        try:
+            jsonschema.validate(missing_manifest, schema)
+            errors.append("schema unexpectedly accepted files without MANIFEST.md")
+        except Exception:
+            pass
         bad = dict(sample)
         bad["files"] = ["chat.md", "conversation.json"]
         try:

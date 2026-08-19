@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import bridge from "../../inject/native-bridge.js";
 
 describe("CwaNativeBridge", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("reports native_unavailable when no host is present", async () => {
     expect(bridge.ping({})).toMatchObject({ ok: false, error: "native_unavailable" });
     await expect(
@@ -105,6 +109,24 @@ describe("CwaNativeBridge", () => {
     expect(host.saveFile).not.toHaveBeenCalled();
   });
 
+  it("rejects thenable ping results synchronously as native_error", () => {
+    const host = {
+      saveFile: vi.fn(),
+      ping    : vi.fn(() => Promise.reject(new Error("host failed"))),
+    };
+
+    expect(bridge.ping({ __cwaNative: host })).toMatchObject({
+      ok   : false,
+      error: "native_error",
+    });
+
+    host.ping.mockReturnValue({ then() {} });
+    expect(bridge.ping({ __cwaNative: host })).toMatchObject({
+      ok   : false,
+      error: "native_error",
+    });
+  });
+
   it("rejects a missing blob without extra fields as invalid_payload", () => {
     expect(bridge.assertSafePayload({ filename: "cwa.md" })).toEqual({
       ok   : false,
@@ -122,6 +144,26 @@ describe("CwaNativeBridge", () => {
       blob    : new Blob(["md"]),
       mime    : 42,
     })).toEqual({
+      ok   : false,
+      error: "invalid_payload",
+    });
+  });
+
+  it("duck-types Blob payloads when Blob is unavailable", () => {
+    vi.stubGlobal("Blob", undefined);
+    const blob = {
+      size : 1,
+      slice: function () {
+        return this;
+      },
+    };
+
+    expect(bridge.assertSafePayload({ filename: "cwa.md", blob })).toEqual({ ok: true });
+    expect(bridge.assertSafePayload({ filename: "cwa.md", blob: { size: 1 } })).toEqual({
+      ok   : false,
+      error: "invalid_payload",
+    });
+    expect(bridge.assertSafePayload({ filename: "cwa.md", blob: "md" })).toEqual({
       ok   : false,
       error: "invalid_payload",
     });

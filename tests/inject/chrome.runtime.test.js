@@ -169,6 +169,123 @@ describe("chrome runtime isolation", () => {
     }
   });
 
+  it("moves the scroller class when the conversation scroller node changes", () => {
+    function makeScroller(document, id) {
+      const node = document.createElement("div");
+      node.id = id;
+      node.style.overflowY = "auto";
+      Object.defineProperty(node, "scrollHeight", {
+        configurable: true,
+        get() {
+          return 1000;
+        },
+      });
+      Object.defineProperty(node, "clientHeight", {
+        configurable: true,
+        get() {
+          return 100;
+        },
+      });
+      return node;
+    }
+
+    let firstScroller;
+    let secondScroller;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        firstScroller  = makeScroller(document, "scroll-a");
+        secondScroller = makeScroller(document, "scroll-b");
+        const main = document.createElement("main");
+        const message = document.createElement("div");
+        message.setAttribute("data-message-author-role", "assistant");
+        message.getBoundingClientRect = () => ({
+          top   : 0,
+          left  : 0,
+          width : 500,
+          height: 200,
+          right : 500,
+          bottom: 200,
+        });
+        main.appendChild(message);
+        firstScroller.appendChild(main);
+        document.body.appendChild(firstScroller);
+        document.body.appendChild(secondScroller);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      expect(firstScroller.classList.contains("cwa-scroller")).toBe(true);
+      expect(secondScroller.classList.contains("cwa-scroller")).toBe(false);
+      expect(firstScroller.hasAttribute("data-cwa-chrome")).toBe(false);
+
+      const main = runtime.document.querySelector("main");
+      secondScroller.appendChild(main);
+      runtime.window.dispatchEvent(new runtime.window.Event("resize"));
+      runtime.flushFrames();
+
+      expect(firstScroller.classList.contains("cwa-scroller")).toBe(false);
+      expect(secondScroller.classList.contains("cwa-scroller")).toBe(true);
+      expect(secondScroller.hasAttribute("data-cwa-chrome")).toBe(false);
+
+      runtime.enterSafeMode();
+      expect(runtime.document.getElementById("cwa-minimap")).toBeNull();
+      expect(firstScroller.classList.contains("cwa-scroller")).toBe(false);
+      expect(secondScroller.classList.contains("cwa-scroller")).toBe(false);
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("skips missing catalog tools instead of falling back to legacy copy", () => {
+    const runtime = bootChrome({
+      setup(window) {
+        window.CwaTools = {
+          catalog() {
+            return [
+              { id: "save-md", title: "Save as Markdown", event: "cwa:save-md", keywords: "download" },
+              { id: "save-zip", title: "Save zip (best effort)", event: "cwa:save-zip", keywords: "archive" },
+            ];
+          },
+          find(id) {
+            return this.catalog().find((item) => item.id === id) || null;
+          },
+          run() {
+            return { ok: true };
+          },
+        };
+      },
+    });
+
+    try {
+      const trigger = runtime.document.querySelector("[data-cwa-action='palette']");
+      expect(trigger).not.toBeNull();
+      trigger.click();
+      const ids = Array.from(runtime.document.querySelectorAll(".cwa-palette-item"))
+        .map((item) => item.getAttribute("data-id"));
+      expect(ids).toEqual(["save-md", "save-zip", "composer", "latest", "find"]);
+      expect(ids).not.toContain("copy");
+      expect(ids).not.toContain("diagnostics");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("falls back to event palette ids when the tools API is absent", () => {
+    const runtime = bootChrome();
+
+    try {
+      const trigger = runtime.document.querySelector("[data-cwa-action='palette']");
+      trigger.click();
+      const ids = Array.from(runtime.document.querySelectorAll(".cwa-palette-item"))
+        .map((item) => item.getAttribute("data-id"));
+      expect(ids).toContain("copy");
+      expect(ids).toContain("composer");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
   it("does not steal export shortcuts from typing targets", () => {
     const runtime = bootChrome();
 

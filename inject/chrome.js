@@ -81,7 +81,7 @@
     for (i = 0; i < toolIds.length; i++) {
       item = byId[toolIds[i]];
       if (!item) {
-        return PALETTE_COMMANDS.slice();
+        continue;
       }
       toolCommands.push({
         id      : item.id,
@@ -633,6 +633,9 @@
     var messages = collectMessages();
     minimapMessages = messages;
     var scroller = findConversationScroller(messages[0]);
+    if (minimapScroller && minimapScroller !== scroller && minimapScroller.classList) {
+      minimapScroller.classList.remove(NS + "-scroller");
+    }
     minimapScroller = scroller;
     if (scroller && scroller.classList && !scroller.classList.contains(NS + "-scroller")) {
       scroller.classList.add(NS + "-scroller");

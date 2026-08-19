@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import tools from "../../inject/tools.js";
 import diagnostics from "../../inject/diagnostics.js";
@@ -12,6 +13,18 @@ describe("CwaTools", () => {
     const ids = tools.catalog().map((item) => item.id);
     expect(ids).toEqual(["copy-visible", "save-md", "save-zip", "diagnostics"]);
     expect(JSON.stringify(tools.catalog())).not.toContain("backend-api");
+  });
+
+  it("keeps the runtime catalog in sync with tools/catalog.yaml", () => {
+    const catalog = readFileSync("tools/catalog.yaml", "utf8");
+    const yamlIds = Array.from(
+      catalog.matchAll(/^\s*-\s+id:\s+(\S+)/gm),
+      (match) => match[1]
+    );
+    const runtimeIds = tools.catalog().map((item) => item.id);
+
+    expect(yamlIds).toEqual(runtimeIds);
+    expect(runtimeIds).toEqual(["copy-visible", "save-md", "save-zip", "diagnostics"]);
   });
 
   it("freezes catalog records while catalog returns independent copies", () => {
@@ -96,6 +109,13 @@ describe("CwaTools", () => {
     });
     expect(emit).not.toHaveBeenCalled();
 
+    vi.stubGlobal("CwaDiagnostics", { snapshot: () => null, emit });
+    expect(tools.run("diagnostics")).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
+    expect(emit).not.toHaveBeenCalled();
+
     vi.stubGlobal("CwaDiagnostics", { snapshot: () => undefined, emit });
     expect(tools.run("diagnostics")).toEqual({
       ok   : false,
@@ -113,6 +133,20 @@ describe("CwaTools", () => {
       ok   : false,
       error: "diagnostics_unavailable",
     });
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("reports diagnostics_unavailable when snapshot contains an error", () => {
+    const emit = vi.fn();
+
+    ["redacted", "probe_failed"].forEach((error) => {
+      vi.stubGlobal("CwaDiagnostics", { snapshot: () => ({ error }), emit });
+      expect(tools.run("diagnostics")).toEqual({
+        ok   : false,
+        error: "diagnostics_unavailable",
+      });
+    });
+
     expect(emit).not.toHaveBeenCalled();
   });
 

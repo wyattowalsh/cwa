@@ -204,21 +204,24 @@ describe("createExporter", () => {
 
   it("does not fetch private conversation or session endpoints from copy, markdown, or ZIP", async () => {
     await exporter.copy();
+    expect(fetchImpl.mock.calls).toEqual([]);
+
     await exporter.saveMarkdown();
+    expect(fetchImpl.mock.calls).toEqual([]);
+
     const zipResult = await exporter.saveZip();
 
     expect(zipResult.ok).toBe(true);
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://files.oaiusercontent.com/img-1.png",
+      "https://chatgpt.com/files/abc",
+    ]);
     expect(privateFetches(fetchImpl)).toEqual([]);
     expect(authOrCookieHeaders(fetchImpl)).toEqual([]);
     expect(
-      fetchImpl.mock.calls.every(([url, init]) => {
-        const href = String(url);
-        const creds = init && init.credentials;
-        if (href.includes("img-1.png") || href.includes("/files/")) {
-          return creds === "omit" && init.redirect === "error";
-        }
-        return true;
-      })
+      fetchImpl.mock.calls.every(([, init]) => (
+        init && init.credentials === "omit" && init.redirect === "error"
+      ))
     ).toBe(true);
   });
 

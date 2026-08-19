@@ -262,3 +262,50 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 2 (post-merge on main)
+
+Independent per-wave re-audit after the first assurance commit (`e9dcb7e`), then exclusive-file fixes. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Visible-thread search root is `main`; skip CSS-hidden and chrome/nav messages | `inject/export-core.js` | **PASS** |
+| ZIP fetch allowlist is the canonical visible media URLs only | `tests/inject/export.test.js` | **PASS** |
+| Manifest `files` must contain `chat.md` and `MANIFEST.md` | `schemas/export-manifest.schema.json` | **PASS** |
+| Stale `.cwa-scroller` class removed when the scroller node changes | `inject/chrome.js` | **PASS** |
+| Palette skips missing catalog tools instead of legacy `copy` fallback | `inject/chrome.js` | **PASS** |
+| Native `blob` requires `Blob` or size+slice duck-type | `inject/native-bridge.js` | **PASS** |
+| Thenable `ping()` results are `native_error` | `inject/native-bridge.js` | **PASS** |
+| Diagnostics snapshot `{error}` is `diagnostics_unavailable` | `inject/tools.js` | **PASS** |
+| Both Pake configs required, byte-identical, `tools.js` before `chrome.js` | `scripts/validate_planning.py` | **PASS** |
+| ZIP native path and `jszip_missing` covered in isolated boot tests | `tests/inject/export-boot.test.js` | **PASS** |
+
+Discarded (not defects vs frozen specs): class selectors with combinators; clipboard `execCommand` fallback; emitting `native_unavailable` on successful browser fallback.
+
+### Wave-assurance round 2 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 126 tests passed
+  node --test inject/chrome.test.js: 13 passed
+  `__CWA_CHROME_BOOTED__` remains undefined when chrome.js is required in Node
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  PASS: planning overlay (strict)
+
+diff -u pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```

@@ -103,6 +103,9 @@
       if (snap == null) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
+      if (typeof snap === "object" && snap.error) {
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
       if (diag && typeof diag.emit === "function") {
         diag.emit({ window: context.window || global }, snap);
       }

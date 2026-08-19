@@ -21,12 +21,20 @@
 
   function ping(root) {
     var host = detectHost(root);
+    var pong;
     if (!host) {
       return { ok: false, error: "native_unavailable", protocol: PROTOCOL };
     }
     if (typeof host.ping === "function") {
       try {
-        return { ok: true, protocol: PROTOCOL, pong: host.ping() };
+        pong = host.ping();
+        if (pong && typeof pong.then === "function") {
+          if (typeof pong.catch === "function") {
+            pong.catch(function () {});
+          }
+          return { ok: false, error: "native_error", protocol: PROTOCOL };
+        }
+        return { ok: true, protocol: PROTOCOL, pong: pong };
       } catch (err) {
         return { ok: false, error: "native_error", protocol: PROTOCOL };
       }
@@ -74,9 +82,15 @@
     if (
       !filename ||
       !blob ||
-      (typeof global.Blob === "function" && !(blob instanceof global.Blob)) ||
       (keys.indexOf("mime") !== -1 && typeof payload.mime !== "string")
     ) {
+      return { ok: false, error: "invalid_payload" };
+    }
+    if (typeof global.Blob === "function") {
+      if (!(blob instanceof global.Blob)) {
+        return { ok: false, error: "invalid_payload" };
+      }
+    } else if (typeof blob.size !== "number" || typeof blob.slice !== "function") {
       return { ok: false, error: "invalid_payload" };
     }
     if (filename.toLowerCase() === "conversation.json") {

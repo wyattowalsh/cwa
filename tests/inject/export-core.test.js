@@ -256,11 +256,16 @@ describe("url and filename helpers", () => {
 });
 
 describe("export manifest schema", () => {
-  it("requires media and rejects conversation.json at any archive depth", () => {
-    const filePattern = MANIFEST_SCHEMA.properties.files.items.not.pattern;
+  it("requires core archive files and rejects conversation.json at any depth", () => {
+    const filesSchema = MANIFEST_SCHEMA.properties.files;
+    const filePattern = filesSchema.items.not.pattern;
 
     expect(MANIFEST_SCHEMA.required).toContain("media");
     expect(MANIFEST_SCHEMA.properties.media.properties.workflow.enum).toEqual(["visible-dom"]);
+    expect(filesSchema.allOf).toEqual([
+      { contains: { const: "chat.md" } },
+      { contains: { const: "MANIFEST.md" } },
+    ]);
     expect(new RegExp(filePattern).test("conversation.json")).toBe(true);
     expect(new RegExp(filePattern).test("media/conversation.json")).toBe(true);
     expect(new RegExp(filePattern).test("media/conversation.json.txt")).toBe(false);
@@ -292,6 +297,72 @@ describe("collectVisibleThread", () => {
     expect(md).toContain("```python");
     expect(md).toContain("> Checking libraries");
     expect(md).toContain("![plot](https://files.oaiusercontent.com/img-1.png)");
+  });
+
+  it("collects only non-hidden messages mounted under main", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<section data-message-author-role="assistant">
+        <p>OFF_THREAD_SECRET</p>
+      </section>
+      <main>
+        <div data-message-author-role="user">
+          <p>VISIBLE_USER</p>
+        </div>
+        <div data-message-author-role="assistant">
+          <p>VISIBLE_ASSISTANT</p>
+        </div>
+        <div data-message-author-role="assistant" style="display: none">
+          <p>HIDDEN_SECRET</p>
+        </div>
+        <div data-message-author-role="user" hidden>
+          <p>HIDDEN_ATTRIBUTE_SECRET</p>
+        </div>
+        <div class="cwa-toolbar" data-message-author-role="assistant">
+          <p>CHROME_SECRET</p>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, {
+      url       : "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+      exportedAt: FIXED_ISO,
+    });
+    const serialized = JSON.stringify(thread);
+    const markdown = core.serializeThreadToMarkdown(thread, { frontmatter: false });
+
+    expect(thread.messages).toHaveLength(2);
+    expect(thread.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(serialized).toContain("VISIBLE_USER");
+    expect(serialized).toContain("VISIBLE_ASSISTANT");
+    expect(serialized).not.toContain("OFF_THREAD_SECRET");
+    expect(serialized).not.toContain("HIDDEN_SECRET");
+    expect(serialized).not.toContain("HIDDEN_ATTRIBUTE_SECRET");
+    expect(serialized).not.toContain("CHROME_SECRET");
+    expect(markdown).toContain("VISIBLE_USER");
+    expect(markdown).toContain("VISIBLE_ASSISTANT");
+    expect(markdown).not.toContain("OFF_THREAD_SECRET");
+    expect(markdown).not.toContain("HIDDEN_SECRET");
+    expect(markdown).not.toContain("HIDDEN_ATTRIBUTE_SECRET");
+    expect(markdown).not.toContain("CHROME_SECRET");
+  });
+
+  it("fails closed when the search root has no main", () => {
+    document.body.replaceChildren();
+    const message = document.createElement("div");
+    message.setAttribute("data-message-author-role", "assistant");
+    message.textContent = "OFF_THREAD_SECRET";
+    document.body.appendChild(message);
+
+    const thread = core.collectVisibleThread(document, {
+      exportedAt: FIXED_ISO,
+    });
+
+    expect(thread.messages).toEqual([]);
+    expect(core.serializeThreadToMarkdown(thread)).not.toContain("OFF_THREAD_SECRET");
   });
 
   it("flags known DOM gaps from the fixture without conversation JSON counts", () => {
@@ -388,6 +459,20 @@ describe("collectVisibleThread", () => {
     link.textContent = "hidden.csv";
     ancestor.appendChild(link);
     main.appendChild(ancestor);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main)).toEqual([]);
+  });
+
+  it("omits a file card that is itself CSS-hidden", () => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const link = document.createElement("a");
+    link.setAttribute("data-testid", "file-card");
+    link.setAttribute("href", "/files/self-hidden.csv");
+    link.setAttribute("hidden", "");
+    link.textContent = "self-hidden.csv";
+    main.appendChild(link);
     document.body.appendChild(main);
 
     expect(core.collectVisibleFileCards(main)).toEqual([]);

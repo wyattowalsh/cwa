@@ -51,6 +51,18 @@
     },
     "files": {
       "type": "array",
+      "allOf": [
+        {
+          "contains": {
+            "const": "chat.md"
+          }
+        },
+        {
+          "contains": {
+            "const": "MANIFEST.md"
+          }
+        }
+      ],
       "items": {
         "type": "string",
         "not": {
