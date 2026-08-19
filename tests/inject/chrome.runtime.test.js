@@ -2,17 +2,24 @@ import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 
+const WAVE2_SOURCES = [
+  "inject/selectors.js",
+  "inject/scheduler.js",
+  "inject/lifecycle.js",
+  "inject/safe-mode.js",
+].map((path) => readFileSync(path, "utf8"));
 const CHROME_SOURCE = readFileSync("inject/chrome.js", "utf8");
 
 function bootChrome(options = {}) {
-  const isolatedWindow = new Window({ url: "https://chatgpt.com/c/test" });
+  const isolatedWindow = new Window({ url: options.url || "https://chatgpt.com/" });
   const isolatedDocument = isolatedWindow.document;
-  let active = false;
-  let onSafeModeChange = null;
   let nextFrame = 1;
   const frames = new Map();
+  let nextTimer = 1;
+  const timers = new Map();
   const scriptWindow = isolatedWindow.eval("window");
   const addEventListener = isolatedWindow.addEventListener.bind(isolatedWindow);
+  let safeModeApi = null;
 
   isolatedWindow.requestAnimationFrame = (callback) => {
     const id = nextFrame;
@@ -23,8 +30,15 @@ function bootChrome(options = {}) {
   isolatedWindow.cancelAnimationFrame = (id) => {
     frames.delete(id);
   };
-  // Happy DOM exposes a distinct Window proxy inside eval(), while dispatched
-  // window events target the outer Window instance. Bridge that identity gap.
+  isolatedWindow.setTimeout = (callback) => {
+    const id = nextTimer;
+    nextTimer += 1;
+    timers.set(id, callback);
+    return id;
+  };
+  isolatedWindow.clearTimeout = (id) => {
+    timers.delete(id);
+  };
   isolatedWindow.addEventListener = (type, listener, listenerOptions) => {
     if (type === "cwa:export-status") {
       addEventListener(type, (event) => {
@@ -37,18 +51,14 @@ function bootChrome(options = {}) {
     }
     addEventListener(type, listener, listenerOptions);
   };
-  isolatedWindow.CwaSafeMode = {
-    createSafeMode({ onChange }) {
-      onSafeModeChange = onChange;
-      return {
-        isActive() {
-          return active;
-        },
-        snapshot() {
-          return { active, reason: active ? "test" : "", code: active ? "safe_mode" : "ok" };
-        },
-      };
-    },
+
+  WAVE2_SOURCES.forEach((source) => {
+    isolatedWindow.eval(source);
+  });
+  const createSafeMode = isolatedWindow.CwaSafeMode.createSafeMode.bind(isolatedWindow.CwaSafeMode);
+  isolatedWindow.CwaSafeMode.createSafeMode = (safeOptions) => {
+    safeModeApi = createSafeMode(safeOptions);
+    return safeModeApi;
   };
 
   if (typeof options.setup === "function") {
@@ -56,17 +66,31 @@ function bootChrome(options = {}) {
   }
   isolatedWindow.eval(CHROME_SOURCE);
 
+  function flushTimeouts() {
+    const pending = Array.from(timers.values());
+    timers.clear();
+    pending.forEach((callback) => callback());
+  }
+
+  function flushFrames() {
+    const pending = Array.from(frames.values());
+    frames.clear();
+    pending.forEach((callback) => callback(0));
+  }
+
   return {
-    window: isolatedWindow,
+    window  : isolatedWindow,
     document: isolatedDocument,
-    flushFrames() {
-      const pending = Array.from(frames.values());
-      frames.clear();
-      pending.forEach((callback) => callback(0));
+    flushTimeouts,
+    flushFrames,
+    flushAll() {
+      flushTimeouts();
+      flushFrames();
     },
     enterSafeMode() {
-      active = true;
-      onSafeModeChange({ active: true, reason: "test", code: "safe_mode" });
+      if (safeModeApi && typeof safeModeApi.enter === "function") {
+        safeModeApi.enter("test");
+      }
     },
   };
 }
@@ -378,7 +402,7 @@ describe("chrome runtime isolation", () => {
       first.remove();
       runtime.document.body.appendChild(second);
       runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
-      runtime.flushFrames();
+      runtime.flushAll();
 
       expect(first.querySelector(".cwa-sidebar-handle")).toBeNull();
       expect(second.querySelector(".cwa-sidebar-handle")).not.toBeNull();
@@ -422,18 +446,104 @@ describe("chrome runtime isolation", () => {
 
       sidebar.style.removeProperty("min-width");
       runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
 
       expect(sidebar.style.getPropertyValue("min-width")).toBe("280px");
       expect(sidebar.style.getPropertyPriority("min-width")).toBe("important");
 
       sidebar.remove();
       runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
 
       expect(sidebar.querySelector(".cwa-sidebar-handle")).toBeNull();
       expect(sidebar.style.getPropertyValue("width")).toBe("240px");
       expect(sidebar.style.getPropertyValue("min-width")).toBe("180px");
       expect(sidebar.style.getPropertyValue("position")).toBe("absolute");
       expect(runtime.document.documentElement.style.getPropertyValue("--sidebar-width")).toBe("164px");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("uses in-main article fallbacks when a document-wide role decoy exists", () => {
+    const bounds = () => ({
+      top   : 0,
+      left  : 0,
+      width : 500,
+      height: 200,
+      right : 500,
+      bottom: 200,
+    });
+    const runtime = bootChrome({
+      setup(_window, document) {
+        const decoy = document.createElement("div");
+        decoy.setAttribute("data-message-author-role", "assistant");
+        decoy.getBoundingClientRect = bounds;
+        document.body.appendChild(decoy);
+        const main = document.createElement("main");
+        const article = document.createElement("article");
+        article.setAttribute("data-testid", "conversation-turn-1");
+        article.getBoundingClientRect = bounds;
+        main.appendChild(article);
+        document.body.appendChild(main);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const strip = runtime.document.getElementById("cwa-minimap");
+      expect(strip).not.toBeNull();
+      expect(strip.getAttribute("data-count")).toBe("1");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("does not enter safe mode from home hydration misses", () => {
+    const runtime = bootChrome({ url: "https://chatgpt.com/" });
+
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+        runtime.flushTimeouts();
+      }
+      expect(runtime.document.getElementById("cwa-minimap")).not.toBeNull();
+      expect(runtime.document.getElementById("cwa-toolbar")).not.toBeNull();
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("enters safe mode after consecutive misses on a settled conversation route", () => {
+    const runtime = bootChrome({
+      url: "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+    });
+
+    try {
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+
+      expect(runtime.document.getElementById("cwa-minimap")).toBeNull();
+      expect(runtime.document.getElementById("cwa-toolbar")).not.toBeNull();
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("coalesces rapid history navigations into one compat refresh", () => {
+    const runtime = bootChrome({
+      url: "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+    });
+
+    try {
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+
+      expect(runtime.document.getElementById("cwa-minimap")).not.toBeNull();
     } finally {
       runtime.window.close();
     }

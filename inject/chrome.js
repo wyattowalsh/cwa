@@ -206,6 +206,78 @@
     return true;
   }
 
+  var COMPAT_JOB = "compat";
+
+  function isCssHidden(el) {
+    var node = el;
+    var view;
+    var style;
+    var display;
+    var visibility;
+    var opacity;
+    while (node && node.nodeType === 1) {
+      if (node.hidden || (node.hasAttribute && node.hasAttribute("hidden"))) {
+        return true;
+      }
+      view = node.ownerDocument && node.ownerDocument.defaultView;
+      style = view && typeof view.getComputedStyle === "function"
+        ? view.getComputedStyle(node)
+        : node.style;
+      display    = String((style && style.display) || "").toLowerCase();
+      visibility = String((style && style.visibility) || "").toLowerCase();
+      opacity    = String((style && style.opacity) || "").trim();
+      if (display === "none" ||
+          visibility === "hidden" ||
+          visibility === "collapse" ||
+          (opacity !== "" && Number(opacity) === 0)) {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function conversationMain(root) {
+    var searchArea = root || document;
+    var mains;
+    var i;
+    var node;
+    var visible = [];
+    var withThread = [];
+    if (!searchArea || !searchArea.querySelectorAll) {
+      return null;
+    }
+    mains = searchArea.querySelectorAll("main");
+    for (i = 0; i < mains.length; i += 1) {
+      node = mains[i];
+      if (isCssHidden(node)) {
+        continue;
+      }
+      visible.push(node);
+      if (qs(messageSelector(), node) ||
+          qs('article[data-testid^="conversation-turn-"]', node)) {
+        withThread.push(node);
+      }
+    }
+    if (withThread.length) {
+      return withThread[0];
+    }
+    return visible[0] || null;
+  }
+
+  function isSettledConversationRoute(href) {
+    var path;
+    try {
+      path = new URL(String(href || ""), "https://chatgpt.com").pathname;
+    } catch (_err) {
+      return false;
+    }
+    if (/\/c\/new\/?$/i.test(path)) {
+      return false;
+    }
+    return /^\/c\/[A-Za-z0-9_-]+/.test(path);
+  }
+
   function isSidebarCandidate(node) {
     if (!node || isChromeOwnedNode(node) ||
         typeof node.getBoundingClientRect !== "function") {
@@ -688,7 +760,8 @@
   }
 
   function findConversationScroller(fromEl) {
-    var node = fromEl || qs(messageSelector());
+    var pane = conversationMain();
+    var node = fromEl || (pane && qs(messageSelector(), pane));
     while (node && node !== document.body && node !== document.documentElement) {
       var style = window.getComputedStyle(node);
       var oy = style.overflowY;
@@ -697,7 +770,7 @@
       }
       node = node.parentElement;
     }
-    return qs("main") || document.scrollingElement || document.documentElement;
+    return pane || null;
   }
 
   function offsetTopRelative(node, ancestor) {
@@ -727,8 +800,8 @@
     if (!node) {
       return false;
     }
-    pane = qs("main");
-    if (pane && !pane.contains(node)) {
+    pane = conversationMain();
+    if (!pane || !pane.contains(node)) {
       return false;
     }
     if (node.closest && node.closest(
@@ -740,14 +813,18 @@
   }
 
   function collectMessages() {
+    var pane = conversationMain();
     var selectors = global.CwaSelectors;
     var resolved;
     var nodes;
+    if (!pane) {
+      return [];
+    }
     if (selectors && typeof selectors.resolve === "function") {
-      resolved = selectors.resolve(document, "message");
+      resolved = selectors.resolve(pane, "message");
       nodes = (resolved && resolved.nodes) || [];
     } else {
-      nodes = qsa(messageSelector(), qs("main") || document);
+      nodes = qsa(messageSelector(), pane);
     }
     return nodes.filter(function (node) {
       return isThreadMessage(node) && node.getBoundingClientRect().height > 0;
@@ -1295,8 +1372,12 @@
       lifecycle.noteHref(window.location.href);
     }
     if (sel && typeof sel.probe === "function") {
-      probe = sel.probe(document);
-      if (safeModeApi && typeof safeModeApi.observe === "function") {
+      probe = sel.probe(conversationMain() || document);
+      if (
+        safeModeApi &&
+        typeof safeModeApi.observe === "function" &&
+        isSettledConversationRoute(window.location && window.location.href)
+      ) {
         safeModeApi.observe(probe);
       }
       if (probe.sidebar && lifecycle && typeof lifecycle.getState === "function") {
@@ -1323,10 +1404,9 @@
     }
   }
 
-  function onMutations(records) {
-    if (shouldIgnoreMutations(records)) return;
+  function scheduleCompatRefresh() {
     if (scheduler) {
-      scheduler.schedule("mutate", onSpaNavigate, { kind: "timeout", delay: 80 });
+      scheduler.schedule(COMPAT_JOB, onSpaNavigate, { kind: "timeout", delay: 80 });
       return;
     }
     if (mutateTimer) clearTimeout(mutateTimer);
@@ -1334,6 +1414,11 @@
       mutateTimer = 0;
       onSpaNavigate();
     }, 80);
+  }
+
+  function onMutations(records) {
+    if (shouldIgnoreMutations(records)) return;
+    scheduleCompatRefresh();
   }
 
   function bindObservers() {
@@ -1382,6 +1467,7 @@
             }
             if (scheduler && typeof scheduler.cancel === "function") {
               scheduler.cancel("sidebar-resize");
+              scheduler.cancel(COMPAT_JOB);
             }
             unmountMinimap();
             if (sidebarEl) {
@@ -1431,18 +1517,18 @@
       syncSidebar();
     }
     bindObservers();
-    hookHistory(onSpaNavigate);
+    hookHistory(scheduleCompatRefresh);
     window.addEventListener("keydown", onGlobalKeyDown, true);
     window.addEventListener("cwa:export-status", onExportStatus);
     document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) onSpaNavigate();
+      if (!document.hidden) scheduleCompatRefresh();
     });
   }
 
   if (document.readyState === "loading" && !document.body) {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
     ensureThemeStylesheet();
-    hookHistory(onSpaNavigate);
+    hookHistory(scheduleCompatRefresh);
     window.addEventListener("keydown", onGlobalKeyDown, true);
   } else {
     boot();

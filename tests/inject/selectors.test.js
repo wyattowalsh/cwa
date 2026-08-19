@@ -19,6 +19,8 @@ describe("CwaSelectors", () => {
     expect(
       selectors.isUnsafeSelector('article[data-testid^="conversation-turn-"]')
     ).toBe(false);
+    expect(selectors.isUnsafeSelector(".foo\\:bar")).toBe(true);
+    expect(selectors.isUnsafeSelector(".éhash")).toBe(true);
   });
 
   it("resolves messages from data-message-author-role without hashed classes", () => {

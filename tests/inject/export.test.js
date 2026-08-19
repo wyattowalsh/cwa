@@ -289,6 +289,31 @@ describe("createExporter", () => {
     expect(result.markdown).not.toContain("/files/abc");
   });
 
+  it("fetches a hashless URL once and rewrites fragment aliases", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <p><img src="https://chatgpt.com/files/abc#one" alt="a"></p>
+          <p><img src="https://chatgpt.com/files/abc#two" alt="b"></p>
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+    const mediaPath = result.files.find((path) => path.startsWith("media/"));
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://chatgpt.com/files/abc",
+      expect.objectContaining({ credentials: "omit", redirect: "error" })
+    );
+    expect(mediaPath).toBeTruthy();
+    expect(result.markdown).toContain(`](${mediaPath})`);
+    expect(result.markdown).not.toContain("#one");
+    expect(result.markdown).not.toContain("#two");
+  });
+
   it("records one skipped media item for the same denied image and file card", async () => {
     const deniedUrl = "https://attacker.example/denied.png";
     mountFixture(

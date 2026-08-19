@@ -853,11 +853,7 @@
     options = options || {};
     var doc = root && root.nodeType === 9 ? root : (root && root.ownerDocument) || root;
     var searchArea = root || doc;
-    var searchRoot = String(root && root.tagName || "").toUpperCase() === "MAIN"
-      ? root
-      : (searchArea && searchArea.querySelector
-        ? searchArea.querySelector("main")
-        : null);
+    var searchRoot = findConversationMain(searchArea);
     var href = options.url || (options.location && options.location.href) || "";
     var title = options.title || conversationTitle(doc);
     var exportedAt = options.exportedAt ||
@@ -997,14 +993,42 @@
     );
   }
 
-  function inspectScope(root) {
-    if (!root || !root.querySelector) {
-      return root;
+  function findConversationMain(root) {
+    var mains;
+    var i;
+    var node;
+    var visible = [];
+    var withThread = [];
+    if (!root) {
+      return null;
     }
     if (String(root.tagName || "").toUpperCase() === "MAIN") {
       return root;
     }
-    return root.querySelector("main") || root;
+    if (!root.querySelectorAll) {
+      return null;
+    }
+    mains = root.querySelectorAll("main");
+    for (i = 0; i < mains.length; i += 1) {
+      node = mains[i];
+      if (hasCssHiddenAncestor(node)) {
+        continue;
+      }
+      visible.push(node);
+      if (node.querySelector(
+        "[data-message-author-role], article[data-testid^='conversation-turn-']"
+      )) {
+        withThread.push(node);
+      }
+    }
+    if (withThread.length) {
+      return withThread[0];
+    }
+    return visible[0] || null;
+  }
+
+  function inspectScope(root) {
+    return findConversationMain(root) || root;
   }
 
   function inspectExportSignals(root, extras) {
@@ -1086,12 +1110,18 @@
       parsed.hostname === "files.oaiusercontent.com" &&
       parsed.port === "";
     if (!sameOrigin && !fixtureCdn) {
-      return { allowed: false, reason: "disallowed_host", href: parsed.href };
+      return { allowed: false, reason: "disallowed_host", href: stripUrlFragment(parsed.href) };
     }
     if (isForbiddenMediaPath(parsed.pathname)) {
-      return { allowed: false, reason: "forbidden_endpoint", href: parsed.href };
+      return { allowed: false, reason: "forbidden_endpoint", href: stripUrlFragment(parsed.href) };
     }
-    return { allowed: true, href: parsed.href };
+    return { allowed: true, href: stripUrlFragment(parsed.href) };
+  }
+
+  function stripUrlFragment(href) {
+    var value = String(href || "");
+    var index = value.indexOf("#");
+    return index === -1 ? value : value.slice(0, index);
   }
 
   function isAllowedMediaUrl(url, origin) {
@@ -1200,9 +1230,7 @@
     if (!root || !root.querySelectorAll) {
       return out;
     }
-    scope = String(root.tagName || "").toUpperCase() === "MAIN"
-      ? root
-      : root.querySelector("main");
+    scope = findConversationMain(root);
     if (!scope) {
       return out;
     }

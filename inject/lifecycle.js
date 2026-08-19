@@ -39,6 +39,9 @@
     }
 
     function boot() {
+      if (state === STATES.safe) {
+        return state;
+      }
       setState(STATES.booting, "boot");
       setState(STATES.ready, "boot-complete");
       return state;

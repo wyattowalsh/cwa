@@ -7,7 +7,10 @@
 (function (global) {
   "use strict";
 
-  var CLASS_ONLY_RE = /^(?:\.[A-Za-z_-][\w-]*)+$/;
+  var CSS_ESCAPE = "\\\\(?:[0-9A-Fa-f]{1,6}[ \\t\\r\\n\\f]?|[^\\n\\r\\f0-9A-Fa-f])";
+  var CSS_NMSTART = "(?:[A-Za-z_]|[^\\x00-\\x7F]|" + CSS_ESCAPE + ")";
+  var CSS_NMCHAR  = "(?:[\\w-]|[^\\x00-\\x7F]|" + CSS_ESCAPE + ")";
+  var CLASS_ONLY_RE = new RegExp("^(?:\\.-?" + CSS_NMSTART + CSS_NMCHAR + "*)+$");
 
   var TARGETS = {
     sidebar: {

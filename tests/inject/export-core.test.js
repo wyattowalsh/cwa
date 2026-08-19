@@ -225,6 +225,12 @@ describe("url and filename helpers", () => {
       href   : "https://chatgpt.com/files/output.csv",
     });
     expect(
+      core.mediaUrlDecision("https://chatgpt.com/files/abc#frag", "https://chatgpt.com")
+    ).toEqual({
+      allowed: true,
+      href   : "https://chatgpt.com/files/abc",
+    });
+    expect(
       core.mediaUrlDecision("https://files.oaiusercontent.com:443/image.png", "https://chatgpt.com")
     ).toMatchObject({ allowed: true });
     expect(
@@ -513,6 +519,28 @@ describe("collectVisibleThread", () => {
     expect(thread.messages).toHaveLength(1);
     expect(serialized).toContain("OUTER_VISIBLE");
     expect(serialized).toContain("INNER_VISIBLE");
+  });
+
+  it("collects from the visible conversation main when a hidden main precedes it", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main hidden>
+        <div data-message-author-role="assistant"><p>STALE_SECRET</p></div>
+      </main>
+      <main>
+        <div data-message-author-role="user"><p>VISIBLE_USER</p></div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("VISIBLE_USER");
+    expect(serialized).not.toContain("STALE_SECRET");
   });
 
   it("skips system and tool roles", () => {

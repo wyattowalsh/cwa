@@ -10,6 +10,15 @@ describe("CwaLifecycle", () => {
     expect(seen).toEqual(["booting", "ready"]);
   });
 
+  it("does not leave safe mode when boot is called again", () => {
+    const life = lifecycleMod.createLifecycle();
+    life.boot();
+    life.enterSafe("critical-miss");
+
+    expect(life.boot()).toBe("safe");
+    expect(life.getState()).toBe("safe");
+  });
+
   it("records SPA href changes as navigating then ready", () => {
     const life = lifecycleMod.createLifecycle({ href: "https://chatgpt.com/" });
     life.boot();
