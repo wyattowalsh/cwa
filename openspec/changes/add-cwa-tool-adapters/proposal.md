@@ -1,3 +1,5 @@
-# Change: add-cwa-tool-adapters (docs only)
+# Change: add-cwa-tool-adapters
 
-Not executed in Wave 1. Future adapters for operator tools must not scrape hidden ChatGPT conversation JSON.
+Palette-invoked local adapters: copy-visible, save-md, save-zip, diagnostics.
+
+No default network. No scrape of hidden conversation JSON. Catalog is `inject/tools.js` plus `tools/catalog.yaml`.

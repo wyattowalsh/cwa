@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import core from "@cwa/export-core";
 
 const FIXED_ISO = "2026-08-18T16:00:00.000Z";
@@ -197,6 +197,41 @@ describe("url and filename helpers", () => {
       "/"
     );
   });
+
+  it("returns normalized allowlist decisions and specific denial reasons", () => {
+    expect(core.mediaUrlDecision("/files/output.csv", "https://chatgpt.com")).toEqual({
+      allowed: true,
+      href   : "https://chatgpt.com/files/output.csv",
+    });
+    expect(
+      core.mediaUrlDecision("https://files.oaiusercontent.com:443/image.png", "https://chatgpt.com")
+    ).toMatchObject({ allowed: true });
+    expect(
+      core.mediaUrlDecision("https://chatgpt.com:444/image.png", "https://chatgpt.com")
+    ).toEqual({ allowed: false, reason: "disallowed_host" });
+    expect(
+      core.mediaUrlDecision(
+        "https://chatgpt.com/%2Fbackend-api%2Fconversation",
+        "https://chatgpt.com"
+      )
+    ).toEqual({ allowed: false, reason: "forbidden_endpoint" });
+    expect(core.mediaUrlDecision("ftp://chatgpt.com/file", "https://chatgpt.com")).toEqual({
+      allowed: false,
+      reason : "unsupported_scheme",
+    });
+    expect(core.mediaUrlDecision("https://", "https://chatgpt.com")).toEqual({
+      allowed: false,
+      reason : "invalid_url",
+    });
+    expect(core.mediaUrlDecision("/files/output.csv", "")).toEqual({
+      allowed: false,
+      reason : "invalid_url",
+    });
+    expect(
+      core.mediaUrlDecision("https://user:secret@chatgpt.com/file", "https://chatgpt.com")
+    ).toEqual({ allowed: false, reason: "invalid_url" });
+    expect(core.isAllowedMediaUrl("/files/output.csv", "https://chatgpt.com")).toBe(true);
+  });
 });
 
 describe("collectVisibleThread", () => {
@@ -244,5 +279,109 @@ describe("collectVisibleThread", () => {
     expect(signals.mediaFetchFailed).toBe(true);
     expect(signals.mediaSkipped).toBe(true);
     expect(signals.conversationJsonMissing).toBeUndefined();
+  });
+
+  it("ignores nav and toolbar decoys while collecting the main file-card", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML("afterbegin", FIXTURE);
+    document.body.appendChild(wrap);
+
+    const cards = core.collectVisibleFileCards(document);
+
+    expect(cards).toEqual([
+      { url: "/files/abc", alt: "output.csv", kind: "file-card" },
+    ]);
+  });
+
+  it("returns no file cards when the root has no main", () => {
+    document.body.replaceChildren();
+    const link = document.createElement("a");
+    link.href = "/files/outside.csv";
+    link.download = "outside.csv";
+    document.body.appendChild(link);
+
+    expect(core.collectVisibleFileCards(document)).toEqual([]);
+  });
+
+  it("records the policy reason when a mounted file card is denied", () => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const link = document.createElement("a");
+    const skipped = [];
+    link.setAttribute("download", "hostile.csv");
+    link.setAttribute("href", "https://attacker.example/hostile.csv");
+    main.appendChild(link);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main, "https://chatgpt.com", skipped)).toEqual([]);
+    expect(skipped).toEqual([
+      {
+        url   : "https://attacker.example/hostile.csv",
+        reason: "disallowed_host",
+      },
+    ]);
+  });
+
+  it("finds a file-card anchor whose data-testid is on the anchor itself", () => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const link = document.createElement("a");
+    link.setAttribute("data-testid", "file-card");
+    link.setAttribute("href", "/downloads/report.csv");
+    link.textContent = "report.csv";
+    main.appendChild(link);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main)).toEqual([
+      { url: "/downloads/report.csv", alt: "report.csv", kind: "file-card" },
+    ]);
+  });
+
+  it.each([
+    ["hidden attribute", (node) => node.setAttribute("hidden", "")],
+    ["display none", (node) => { node.style.display = "none"; }],
+    ["hidden visibility", (node) => { node.style.visibility = "hidden"; }],
+    ["collapsed visibility", (node) => { node.style.visibility = "collapse"; }],
+    ["zero opacity", (node) => { node.style.opacity = "0"; }],
+  ])("omits file cards under an ancestor with %s", (_label, hide) => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const ancestor = document.createElement("section");
+    const link = document.createElement("a");
+    hide(ancestor);
+    link.setAttribute("data-testid", "file-card");
+    link.setAttribute("href", "/files/hidden.csv");
+    link.textContent = "hidden.csv";
+    ancestor.appendChild(link);
+    main.appendChild(ancestor);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main)).toEqual([]);
+  });
+
+  it("keeps mounted file cards regardless of viewport geometry", () => {
+    document.body.replaceChildren();
+    const main = document.createElement("main");
+    const link = document.createElement("a");
+    const bounds = vi.fn(() => ({
+      bottom: 0,
+      height: 0,
+      left  : 0,
+      right : 0,
+      top   : 0,
+      width : 0,
+    }));
+    link.setAttribute("data-testid", "file-card");
+    link.setAttribute("href", "/files/mounted.csv");
+    link.textContent = "mounted.csv";
+    link.getBoundingClientRect = bounds;
+    main.appendChild(link);
+    document.body.appendChild(main);
+
+    expect(core.collectVisibleFileCards(main)).toEqual([
+      { url: "/files/mounted.csv", alt: "mounted.csv", kind: "file-card" },
+    ]);
+    expect(bounds).not.toHaveBeenCalled();
   });
 });

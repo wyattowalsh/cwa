@@ -38,10 +38,65 @@
     { id: "copy",     title: "Copy visible thread",   hint: "Dispatches cwa:copy",     event: EVENTS.copy,    keywords: "clipboard markdown" },
     { id: "save-md",  title: "Save as Markdown",      hint: "Dispatches cwa:save-md",  event: EVENTS.saveMd,  keywords: "download md file" },
     { id: "save-zip", title: "Save zip (best effort)", hint: "Dispatches cwa:save-zip", event: EVENTS.saveZip, keywords: "archive export media" },
+    { id: "diagnostics",  title: "Diagnostics snapshot",  hint: "Selector/lifecycle (redacted)", action: "diagnostics", keywords: "safe mode selectors" },
     { id: "composer", title: "Focus composer",        hint: "Jump to the prompt",          action: "composer",    keywords: "prompt textarea input" },
     { id: "latest",   title: "Jump to latest message", hint: "Scroll to last mounted turn", action: "latest",     keywords: "bottom end" },
-    { id: "find",     title: "Find in page",          hint: "Use Cmd+F — Pake find",       action: "find",        keywords: "search" },
+    { id: "find",         title: "Find in page",          hint: "Use Cmd+F — Pake find",       action: "find",         keywords: "search" },
   ];
+
+  var lifecycle   = null;
+  var safeModeApi = null;
+  var scheduler   = null;
+
+  function allPaletteCommands() {
+    var tools = global.CwaTools;
+    var toolIds = ["copy-visible", "save-md", "save-zip", "diagnostics"];
+    var localIds = { composer: true, latest: true, find: true };
+    var catalog;
+    var byId = {};
+    var toolCommands = [];
+    var localCommands = PALETTE_COMMANDS.filter(function (cmd) {
+      return Boolean(localIds[cmd.id]);
+    });
+    var i;
+    var item;
+
+    if (!tools || typeof tools.catalog !== "function") {
+      return PALETTE_COMMANDS.slice();
+    }
+    try {
+      catalog = tools.catalog();
+    } catch (_) {
+      return PALETTE_COMMANDS.slice();
+    }
+    if (!Array.isArray(catalog)) {
+      return PALETTE_COMMANDS.slice();
+    }
+    for (i = 0; i < catalog.length; i++) {
+      item = catalog[i];
+      if (item && toolIds.indexOf(item.id) !== -1) {
+        byId[item.id] = item;
+      }
+    }
+    for (i = 0; i < toolIds.length; i++) {
+      item = byId[toolIds[i]];
+      if (!item) {
+        return PALETTE_COMMANDS.slice();
+      }
+      toolCommands.push({
+        id      : item.id,
+        title   : item.title,
+        event   : item.event,
+        action  : item.action,
+        keywords: item.keywords,
+      });
+    }
+    return toolCommands.concat(localCommands);
+  }
+
+  function isSafe() {
+    return Boolean(safeModeApi && safeModeApi.isActive && safeModeApi.isActive());
+  }
 
   function clampSidebarWidth(value, min, max, fallback) {
     var lo = min == null ? SIDEBAR_MIN : min;
@@ -104,7 +159,62 @@
     if (code === "clipboard_denied") return "Clipboard permission denied";
     if (code === "download_denied") return "Download blocked";
     if (code === "unsupported_route") return "Nothing to export on this page";
+    if (code === "safe_mode") return "Safe mode: chrome limited, export still available";
+    if (code === "native_unavailable") return "Native companion unavailable; used browser download";
     return detail.message || code;
+  }
+
+  function isChromeOwnedNode(node) {
+    var element = node && typeof node.closest === "function"
+      ? node
+      : node && node.parentElement;
+    return Boolean(element && typeof element.closest === "function" &&
+      element.closest("[data-cwa-chrome]"));
+  }
+
+  function shouldIgnoreMutations(records) {
+    if (!records || !records.length) return false;
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      if (!record) return false;
+      if (record.type !== "childList") {
+        if (!isChromeOwnedNode(record.target)) return false;
+        continue;
+      }
+      if (isChromeOwnedNode(record.target)) continue;
+      var lists = [record.addedNodes || [], record.removedNodes || []];
+      var sawElement = false;
+      for (var j = 0; j < lists.length; j++) {
+        for (var k = 0; k < lists[j].length; k++) {
+          var node = lists[j][k];
+          if (!node || node.nodeType !== 1) continue;
+          sawElement = true;
+          if (!isChromeOwnedNode(node)) return false;
+        }
+      }
+      if (!sawElement) return false;
+    }
+    return true;
+  }
+
+  function isSidebarCandidate(node) {
+    if (!node || isChromeOwnedNode(node) ||
+        typeof node.getBoundingClientRect !== "function") {
+      return false;
+    }
+    var rect = node.getBoundingClientRect();
+    return rect.height > 120 && rect.width > 40 && rect.left < 280;
+  }
+
+  function isTypingTarget(node) {
+    if (!node) return false;
+    var tag = (node.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (node.isContentEditable) return true;
+    if (typeof node.closest !== "function") return false;
+    return Boolean(node.closest(
+      "[contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only']"
+    ));
   }
 
   var api = {
@@ -113,11 +223,21 @@
     offsetToMinimapY: offsetToMinimapY,
     nearestOffsetIndex: nearestOffsetIndex,
     formatExportStatus: formatExportStatus,
+    isChromeOwnedNode: isChromeOwnedNode,
+    shouldIgnoreMutations: shouldIgnoreMutations,
+    isSidebarCandidate: isSidebarCandidate,
+    isTypingTarget: isTypingTarget,
     SIDEBAR_MIN: SIDEBAR_MIN,
     SIDEBAR_MAX: SIDEBAR_MAX,
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT,
     EVENTS: EVENTS,
     STORAGE_WIDTH: STORAGE_WIDTH,
+    runtime: function runtime() {
+      return {
+        lifecycle: lifecycle && lifecycle.getState ? lifecycle.getState() : null,
+        safeMode : safeModeApi && safeModeApi.snapshot ? safeModeApi.snapshot() : null,
+      };
+    },
   };
 
   global.CwaChrome = api;
@@ -139,7 +259,7 @@
   var minimapMessages = [];
   var minimapScroller = null;
   var paletteIndex = 0;
-  var paletteFiltered = PALETTE_COMMANDS.slice();
+  var paletteFiltered = allPaletteCommands();
   var rafMinimap = 0;
   var rafSidebar = 0;
   var mutateTimer = 0;
@@ -207,9 +327,6 @@
   function emit(name) {
     var detail = { source: "chrome", at: Date.now() };
     var opts = { bubbles: true, cancelable: true, detail: detail };
-    try {
-      document.dispatchEvent(new CustomEvent(name, opts));
-    } catch (_) {}
     try {
       window.dispatchEvent(new CustomEvent(name, opts));
     } catch (_) {}
@@ -292,21 +409,40 @@
     return w > 0 && w < SIDEBAR_COLLAPSE_MAX;
   }
 
+  function sidebarSelectors() {
+    var sel = global.CwaSelectors;
+    if (sel && sel.SIDEBAR_SELECTORS && sel.SIDEBAR_SELECTORS.length) {
+      return sel.SIDEBAR_SELECTORS;
+    }
+    return SIDEBAR_SELECTORS;
+  }
+
+  function messageSelector() {
+    var sel = global.CwaSelectors;
+    if (sel && sel.MESSAGE_SELECTOR) {
+      return sel.MESSAGE_SELECTOR;
+    }
+    return MESSAGE_SELECTOR;
+  }
+
   function findSidebar() {
+    var selectors = global.CwaSelectors;
+    var resolved;
     var seen = [];
-    for (var i = 0; i < SIDEBAR_SELECTORS.length; i++) {
-      var found = qsa(SIDEBAR_SELECTORS[i]);
+    var list = sidebarSelectors();
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "sidebar");
+      if (resolved && isSidebarCandidate(resolved.node)) {
+        return resolved.node;
+      }
+    }
+    for (var i = 0; i < list.length; i++) {
+      var found = qsa(list[i]);
       for (var j = 0; j < found.length; j++) {
         if (seen.indexOf(found[j]) === -1) seen.push(found[j]);
       }
     }
-    var candidates = seen.filter(function (node) {
-      if (node.closest && node.closest("#" + NS + "-palette, ." + NS + "-toolbar, ." + NS + "-minimap")) {
-        return false;
-      }
-      var r = node.getBoundingClientRect();
-      return r.height > 120 && r.width > 40 && r.left < 280;
-    });
+    var candidates = seen.filter(isSidebarCandidate);
     candidates.sort(function (a, b) {
       return b.getBoundingClientRect().height - a.getBoundingClientRect().height;
     });
@@ -342,6 +478,7 @@
   }
 
   function onHandlePointerDown(event) {
+    if (isSafe()) return;
     if (event.button != null && event.button !== 0) return;
     if (!sidebarEl) return;
     dragging = true;
@@ -355,12 +492,14 @@
   }
 
   function onHandlePointerMove(event) {
+    if (isSafe()) return;
     if (!dragging || !sidebarEl) return;
     var next = clampSidebarWidth(dragStartW + (event.clientX - dragStartX));
     applySidebarWidth(sidebarEl, next, true);
   }
 
   function onHandlePointerUp(event) {
+    if (isSafe()) return;
     if (!dragging) return;
     dragging = false;
     if (handleEl) handleEl.removeAttribute("data-active");
@@ -373,6 +512,7 @@
   }
 
   function onHandleKeyDown(event) {
+    if (isSafe()) return;
     if (!sidebarEl) return;
     var step = event.shiftKey ? 24 : 8;
     var current = sidebarEl.getBoundingClientRect().width;
@@ -398,6 +538,7 @@
   function mountHandle(node) {
     var existing = qs("." + NS + "-sidebar-handle", node);
     if (existing) {
+      existing.setAttribute("data-cwa-chrome", "1");
       handleEl = existing;
       return;
     }
@@ -409,6 +550,7 @@
       "aria-label": "Resize sidebar",
       title: "Drag to resize sidebar",
       tabIndex: 0,
+      "data-cwa-chrome": "1",
     });
     handleEl.addEventListener("pointerdown", onHandlePointerDown);
     handleEl.addEventListener("pointermove", onHandlePointerMove);
@@ -419,6 +561,7 @@
   }
 
   function syncSidebar() {
+    if (isSafe()) return;
     var node = findSidebar();
     if (!node) return;
     if (sidebarEl !== node) {
@@ -431,6 +574,7 @@
     }
     var collapsed = isCollapsed(node);
     if (handleEl) {
+      handleEl.disabled = false;
       if (collapsed) handleEl.setAttribute("hidden", "");
       else handleEl.removeAttribute("hidden");
     }
@@ -438,7 +582,7 @@
   }
 
   function findConversationScroller(fromEl) {
-    var node = fromEl || qs(MESSAGE_SELECTOR);
+    var node = fromEl || qs(messageSelector());
     while (node && node !== document.body && node !== document.documentElement) {
       var style = window.getComputedStyle(node);
       var oy = style.overflowY;
@@ -469,12 +613,21 @@
   }
 
   function collectMessages() {
-    return qsa(MESSAGE_SELECTOR).filter(function (node) {
+    var selectors = global.CwaSelectors;
+    var resolved;
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "message");
+      return ((resolved && resolved.nodes) || []).filter(function (node) {
+        return node.getBoundingClientRect().height > 0;
+      });
+    }
+    return qsa(messageSelector()).filter(function (node) {
       return node.getBoundingClientRect().height > 0;
     });
   }
 
   function rebuildMinimap() {
+    if (isSafe()) return;
     var strip = document.getElementById(NS + "-minimap");
     if (!strip) return;
     var messages = collectMessages();
@@ -501,6 +654,11 @@
   }
 
   function scheduleMinimap() {
+    if (isSafe()) return;
+    if (scheduler) {
+      scheduler.schedule("minimap", rebuildMinimap, { kind: "raf" });
+      return;
+    }
     if (rafMinimap) cancelAnimationFrame(rafMinimap);
     rafMinimap = requestAnimationFrame(function () {
       rafMinimap = 0;
@@ -566,6 +724,7 @@
         "aria-label": "Conversation minimap",
         title: "Jump to a mounted message",
         tabIndex: 0,
+        "data-cwa-chrome": "1",
       });
       strip.addEventListener("click", onMinimapClick);
       strip.addEventListener("keydown", onMinimapKeyDown);
@@ -573,10 +732,37 @@
     } else if (!strip.isConnected) {
       (document.body || document.documentElement).appendChild(strip);
     }
+    strip.setAttribute("data-cwa-chrome", "1");
     scheduleMinimap();
   }
 
+  function unmountMinimap() {
+    var strip = document.getElementById(NS + "-minimap");
+    if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
+    if (minimapScroller && minimapScroller.classList) {
+      minimapScroller.classList.remove(NS + "-scroller");
+    }
+    minimapMessages = [];
+    minimapScroller = null;
+    if (scheduler && typeof scheduler.cancel === "function") {
+      scheduler.cancel("minimap");
+    }
+    if (rafMinimap) {
+      cancelAnimationFrame(rafMinimap);
+      rafMinimap = 0;
+    }
+  }
+
   function focusComposer() {
+    var selectors = global.CwaSelectors;
+    var resolved;
+    if (selectors && typeof selectors.resolve === "function") {
+      resolved = selectors.resolve(document, "composer");
+      if (resolved && resolved.node) {
+        if (typeof resolved.node.focus === "function") resolved.node.focus();
+        return;
+      }
+    }
     var node =
       qs("#prompt-textarea") ||
       qs("[data-testid*='composer' i] textarea") ||
@@ -595,11 +781,13 @@
   function closePalette() {
     var backdrop = document.getElementById(NS + "-palette-backdrop");
     var dialog = document.getElementById(NS + "-palette");
+    var input = document.getElementById(NS + "-palette-input");
     if (backdrop) backdrop.hidden = true;
     if (dialog) {
       dialog.hidden = true;
       dialog.setAttribute("aria-hidden", "true");
     }
+    if (input) input.setAttribute("aria-expanded", "false");
     var trigger = qs("." + NS + "-toolbar [data-cwa-action='palette']");
     if (trigger) {
       trigger.setAttribute("aria-expanded", "false");
@@ -609,9 +797,9 @@
 
   function renderPaletteList(query) {
     var q = (query || "").trim().toLowerCase();
-    paletteFiltered = PALETTE_COMMANDS.filter(function (cmd) {
+    paletteFiltered = allPaletteCommands().filter(function (cmd) {
       if (!q) return true;
-      return (cmd.title + " " + cmd.hint + " " + (cmd.keywords || "")).toLowerCase().indexOf(q) !== -1;
+      return (cmd.title + " " + (cmd.hint || "") + " " + (cmd.keywords || "")).toLowerCase().indexOf(q) !== -1;
     });
     paletteIndex = 0;
     var list = document.getElementById(NS + "-palette-list");
@@ -626,14 +814,17 @@
         "data-id": cmd.id,
         "aria-selected": i === 0 ? "true" : "false",
       });
-      item.textContent = cmd.title + " — " + cmd.hint;
+      item.textContent = cmd.title + (cmd.hint ? " — " + cmd.hint : "");
       item.addEventListener("click", function () {
         runCommand(cmd);
       });
       frag.appendChild(item);
     });
     replaceKids(list, frag);
-    list.setAttribute("aria-activedescendant", paletteFiltered[0] ? NS + "-opt-" + paletteFiltered[0].id : "");
+    var input = document.getElementById(NS + "-palette-input");
+    if (input) {
+      input.setAttribute("aria-activedescendant", paletteFiltered[0] ? NS + "-opt-" + paletteFiltered[0].id : "");
+    }
   }
 
   function highlightPalette() {
@@ -641,20 +832,64 @@
     items.forEach(function (item, i) {
       item.setAttribute("aria-selected", i === paletteIndex ? "true" : "false");
     });
-    var list = document.getElementById(NS + "-palette-list");
+    var input = document.getElementById(NS + "-palette-input");
     var active = paletteFiltered[paletteIndex];
-    if (list) list.setAttribute("aria-activedescendant", active ? NS + "-opt-" + active.id : "");
+    if (input) input.setAttribute("aria-activedescendant", active ? NS + "-opt-" + active.id : "");
     if (items[paletteIndex] && items[paletteIndex].scrollIntoView) {
       items[paletteIndex].scrollIntoView({ block: "nearest" });
     }
   }
 
+  function emitDiagnostics() {
+    var tools = global.CwaTools;
+    var diag  = global.CwaDiagnostics;
+    var sel   = global.CwaSelectors;
+    var probe = sel && typeof sel.probe === "function" ? sel.probe(document) : {};
+    var snap;
+    if (tools && typeof tools.run === "function") {
+      return tools.run("diagnostics", {
+        window    : window,
+        probe     : probe,
+        lifecycle : lifecycle,
+        safeMode  : safeModeApi,
+        href      : window.location && window.location.href,
+      });
+    }
+    if (diag && typeof diag.snapshot === "function") {
+      snap = diag.snapshot({
+        probe     : probe,
+        lifecycle : lifecycle,
+        safeMode  : safeModeApi,
+        href      : window.location && window.location.href,
+      });
+      diag.emit({ window: window }, snap);
+      return snap;
+    }
+    return null;
+  }
+
   function runCommand(cmd) {
+    var tools;
+    var selectors;
+    var probe;
     closePalette();
     if (!cmd) return;
+    tools = global.CwaTools;
+    if (tools && typeof tools.find === "function" && typeof tools.run === "function" && tools.find(cmd.id)) {
+      selectors = global.CwaSelectors;
+      probe = selectors && typeof selectors.probe === "function" ? selectors.probe(document) : {};
+      return tools.run(cmd.id, {
+        window   : window,
+        probe    : probe,
+        lifecycle: lifecycle,
+        safeMode : safeModeApi,
+        href     : location.href,
+      });
+    }
     if (cmd.event) emit(cmd.event);
     if (cmd.action === "composer") focusComposer();
     if (cmd.action === "latest") jumpLatest();
+    if (cmd.action === "diagnostics") emitDiagnostics();
   }
 
   function openPalette() {
@@ -672,6 +907,7 @@
     renderPaletteList("");
     if (input) {
       input.value = "";
+      input.setAttribute("aria-expanded", "true");
       input.focus();
     }
   }
@@ -719,22 +955,31 @@
   }
 
   function mountPalette() {
-    if (!document.getElementById(NS + "-palette-backdrop")) {
+    var existingBackdrop = document.getElementById(NS + "-palette-backdrop");
+    if (!existingBackdrop) {
       var backdrop = el("div", {
         id: NS + "-palette-backdrop",
         className: NS + "-palette-backdrop",
+        "data-cwa-chrome": "1",
       });
       backdrop.hidden = true;
       backdrop.addEventListener("click", closePalette);
       (document.body || document.documentElement).appendChild(backdrop);
+    } else {
+      existingBackdrop.setAttribute("data-cwa-chrome", "1");
     }
-    if (document.getElementById(NS + "-palette")) return;
+    var existingDialog = document.getElementById(NS + "-palette");
+    if (existingDialog) {
+      existingDialog.setAttribute("data-cwa-chrome", "1");
+      return;
+    }
     var dialog = el("div", {
       id: NS + "-palette",
       className: NS + "-palette",
       role: "dialog",
       "aria-modal": "true",
       "aria-labelledby": NS + "-palette-title",
+      "data-cwa-chrome": "1",
     });
     dialog.hidden = true;
     dialog.setAttribute("aria-hidden", "true");
@@ -748,8 +993,12 @@
       id: NS + "-palette-input",
       className: NS + "-palette-input",
       type: "search",
+      role: "combobox",
       "aria-label": "Filter commands",
       "aria-controls": NS + "-palette-list",
+      "aria-autocomplete": "list",
+      "aria-expanded": "false",
+      "aria-activedescendant": "",
       autocomplete: "off",
       spellcheck: "false",
       placeholder: "Filter commands",
@@ -781,34 +1030,46 @@
         role: "status",
         "aria-live": "polite",
         "aria-atomic": "true",
+        "data-cwa-chrome": "1",
       });
       node.hidden = true;
       (document.body || document.documentElement).appendChild(node);
     } else if (!node.isConnected) {
       (document.body || document.documentElement).appendChild(node);
     }
+    node.setAttribute("data-cwa-chrome", "1");
     return node;
   }
 
   function onExportStatus(event) {
+    if (event.target && event.target !== window) return;
     var node = mountExportStatus();
     var detail = (event && event.detail) || {};
     var text = formatExportStatus(detail);
-    node.textContent = text;
+    if (!text) {
+      node.hidden = true;
+      node.textContent = "";
+      return;
+    }
     node.setAttribute("data-ok", detail.ok ? "true" : "false");
     node.setAttribute("data-code", detail.code || "");
-    node.hidden = !text;
+    node.hidden = false;
+    node.textContent = text;
   }
 
   function mountToolbar() {
     var bar = document.getElementById(NS + "-toolbar");
-    if (bar && bar.isConnected) return bar;
+    if (bar && bar.isConnected) {
+      bar.setAttribute("data-cwa-chrome", "1");
+      return bar;
+    }
     if (!bar) {
       bar = el("div", {
         id: NS + "-toolbar",
         className: NS + "-toolbar",
         role: "toolbar",
         "aria-label": "cwa thread actions",
+        "data-cwa-chrome": "1",
       });
       var buttons = [
         { action: "copy", label: "Copy visible thread", event: EVENTS.copy, text: "Copy" },
@@ -835,16 +1096,9 @@
         bar.appendChild(btn);
       });
     }
+    bar.setAttribute("data-cwa-chrome", "1");
     (document.body || document.documentElement).appendChild(bar);
     return bar;
-  }
-
-  function isTypingTarget(node) {
-    if (!node || node === document.body) return false;
-    var tag = (node.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    if (node.isContentEditable) return true;
-    return false;
   }
 
   function onGlobalKeyDown(event) {
@@ -857,6 +1111,7 @@
       }
       return;
     }
+    if (isTypingTarget(event.target)) return;
     var mod = event.metaKey || event.ctrlKey;
     if (!mod || !event.shiftKey) return;
     if (key === "f" || key === "F") return;
@@ -899,17 +1154,48 @@
     window.addEventListener("hashchange", onNavigate);
   }
 
+  function refreshCompatibility() {
+    var sel = global.CwaSelectors;
+    var probe;
+    var state;
+    if (lifecycle && window.location) {
+      lifecycle.noteHref(window.location.href);
+    }
+    if (sel && typeof sel.probe === "function") {
+      probe = sel.probe(document);
+      if (safeModeApi && typeof safeModeApi.observe === "function") {
+        safeModeApi.observe(probe);
+      }
+      if (probe.sidebar && lifecycle && typeof lifecycle.getState === "function") {
+        state = lifecycle.getState();
+        if (!probe.sidebar.hit && state !== "safe" && typeof lifecycle.degrade === "function") {
+          lifecycle.degrade("sidebar_miss");
+        } else if (probe.sidebar.hit && state === "degraded" && typeof lifecycle.recover === "function") {
+          lifecycle.recover();
+        }
+      }
+    }
+  }
+
   function onSpaNavigate() {
+    refreshCompatibility();
     ensureThemeStylesheet();
     mountToolbar();
     mountPalette();
-    mountMinimap();
     mountExportStatus();
-    syncSidebar();
-    scheduleMinimap();
+    if (!isSafe()) {
+      mountMinimap();
+      syncSidebar();
+      scheduleMinimap();
+    }
   }
 
-  function onMutations() {
+  function onMutations(records) {
+    if (shouldIgnoreMutations(records)) return;
+    if (scheduler) {
+      scheduler.schedule("mutate", onSpaNavigate, { kind: "timeout", delay: 80 });
+      return;
+    }
     if (mutateTimer) clearTimeout(mutateTimer);
     mutateTimer = setTimeout(function () {
       mutateTimer = 0;
@@ -928,6 +1214,10 @@
       try {
         var ro = new ResizeObserver(function () {
           scheduleMinimap();
+          if (scheduler) {
+            scheduler.schedule("sidebar-resize", syncSidebar, { kind: "raf" });
+            return;
+          }
           if (!rafSidebar) {
             rafSidebar = requestAnimationFrame(function () {
               rafSidebar = 0;
@@ -940,7 +1230,59 @@
     }
   }
 
+  function ensureRuntime() {
+    if (!scheduler && global.CwaScheduler && typeof global.CwaScheduler.createScheduler === "function") {
+      scheduler = global.CwaScheduler.createScheduler();
+    }
+    if (!lifecycle && global.CwaLifecycle && typeof global.CwaLifecycle.createLifecycle === "function") {
+      lifecycle = global.CwaLifecycle.createLifecycle({
+        href: window.location && window.location.href,
+      });
+      lifecycle.boot();
+    }
+    if (!safeModeApi && global.CwaSafeMode && typeof global.CwaSafeMode.createSafeMode === "function") {
+      safeModeApi = global.CwaSafeMode.createSafeMode({
+        onChange: function (snap) {
+          if (snap.active) {
+            if (lifecycle && typeof lifecycle.enterSafe === "function") {
+              lifecycle.enterSafe(snap.reason);
+            }
+            if (scheduler && typeof scheduler.cancel === "function") {
+              scheduler.cancel("sidebar-resize");
+            }
+            unmountMinimap();
+            if (rafSidebar) {
+              cancelAnimationFrame(rafSidebar);
+              rafSidebar = 0;
+            }
+            dragging = false;
+            if (handleEl) {
+              handleEl.setAttribute("hidden", "");
+              handleEl.disabled = true;
+            }
+            emitStatusSafe(snap);
+          }
+        },
+      });
+    }
+  }
+
+  function emitStatusSafe(snap) {
+    try {
+      window.dispatchEvent(new CustomEvent("cwa:export-status", {
+        bubbles: true,
+        detail : {
+          action : "chrome",
+          ok     : true,
+          code   : "safe_mode",
+          message: snap.reason || "safe_mode",
+        },
+      }));
+    } catch (_) {}
+  }
+
   function boot() {
+    ensureRuntime();
     ensureThemeStylesheet();
     var host = document.body || document.documentElement;
     if (!host) {
@@ -949,14 +1291,16 @@
     }
     mountToolbar();
     mountPalette();
-    mountMinimap();
     mountExportStatus();
-    syncSidebar();
+    refreshCompatibility();
+    if (!isSafe()) {
+      mountMinimap();
+      syncSidebar();
+    }
     bindObservers();
     hookHistory(onSpaNavigate);
     window.addEventListener("keydown", onGlobalKeyDown, true);
     window.addEventListener("cwa:export-status", onExportStatus);
-    document.addEventListener("cwa:export-status", onExportStatus);
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) onSpaNavigate();
     });

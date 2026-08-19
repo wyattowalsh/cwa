@@ -11,12 +11,16 @@ const PRIVATE_FETCH_RE =
 // Forbidden runtime URLs (documented for TASK-018 review):
 // /backend-api/conversation  /backend-api/conversations  /api/auth/session
 
+let lastFakeZip;
 
 function FakeZip() {
-  this.files = {};
+  this.files     = {};
+  this.fileCalls = [];
+  lastFakeZip    = this;
 }
 FakeZip.prototype.file = function file(path, content) {
   this.files[path] = content;
+  this.fileCalls.push([path, content]);
   return this;
 };
 FakeZip.prototype.generateAsync = async function generateAsync() {
@@ -43,28 +47,48 @@ function authOrCookieHeaders(fetchImpl) {
   });
 }
 
+function createManualTimers() {
+  let nextId = 1;
+  const pending = new Map();
+  return {
+    setTimeout: vi.fn((callback, delay) => {
+      const id = nextId;
+      nextId += 1;
+      pending.set(id, { callback, delay });
+      return id;
+    }),
+    clearTimeout: vi.fn((id) => {
+      pending.delete(id);
+    }),
+    fireAll() {
+      const timers = Array.from(pending.values());
+      pending.clear();
+      timers.forEach(({ callback }) => callback());
+    },
+  };
+}
+
 describe("createExporter", () => {
   let downloads;
   let clipboard;
   let fetchImpl;
   let exporter;
-  let lastZip;
+  let timers;
 
   function makeExporter(overrides) {
     return core.createExporter({
-      window    : window,
-      document  : document,
-      root      : document,
-      location  : { href: CONV_URL, origin: "https://chatgpt.com" },
-      fetch     : fetchImpl,
-      clipboard : clipboard,
-      JSZip     : FakeZip,
-      clock     : { now: () => FIXED_ISO, nowMs: () => 1_000 },
-      download  : (blob, filename) => {
+      window      : window,
+      document    : document,
+      root        : document,
+      location    : { href: CONV_URL, origin: "https://chatgpt.com" },
+      fetch       : fetchImpl,
+      clipboard   : clipboard,
+      JSZip       : FakeZip,
+      clock       : { now: () => FIXED_ISO, nowMs: () => 1_000 },
+      setTimeout  : timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      download    : (blob, filename) => {
         downloads.push({ blob, filename });
-        if (blob && blob.type === "application/zip") {
-          lastZip = blob;
-        }
         return true;
       },
       ...overrides,
@@ -74,7 +98,8 @@ describe("createExporter", () => {
   beforeEach(() => {
     mountFixture();
     downloads = [];
-    lastZip   = null;
+    lastFakeZip = null;
+    timers = createManualTimers();
     clipboard = {
       writeText: vi.fn().mockResolvedValue(undefined),
     };
@@ -82,12 +107,30 @@ describe("createExporter", () => {
       const href = String(url);
       if (href.includes("img-1.png") || href.includes("img-")) {
         return {
-          ok    : true,
-          status: 200,
-          blob  : async () => new Blob(["PNG"], { type: "image/png" }),
+          ok        : true,
+          status    : 200,
+          url       : href,
+          redirected: false,
+          blob      : async () => new Blob(["PNG"], { type: "image/png" }),
         };
       }
-      return { ok: false, status: 404, json: async () => ({}), blob: async () => new Blob([]) };
+      if (href.includes("/files/")) {
+        return {
+          ok        : true,
+          status    : 200,
+          url       : href,
+          redirected: false,
+          blob      : async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+        };
+      }
+      return {
+        ok        : false,
+        status    : 404,
+        url       : href,
+        redirected: false,
+        json      : async () => ({}),
+        blob      : async () => new Blob([]),
+      };
     });
     exporter = makeExporter();
   });
@@ -104,6 +147,36 @@ describe("createExporter", () => {
     expect(md).not.toMatch(/^---\n/);
     expect(md).toContain("Visible thread only");
     expect(privateFetches(fetchImpl)).toEqual([]);
+  });
+
+  it("dispatches each export status once, preferring window with a document fallback", async () => {
+    const windowDispatch = vi.spyOn(window, "dispatchEvent");
+    const documentDispatch = vi.spyOn(document, "dispatchEvent");
+    try {
+      await exporter.copy();
+      expect(
+        windowDispatch.mock.calls.filter(([event]) => event.type === "cwa:export-status")
+      ).toHaveLength(1);
+      expect(
+        documentDispatch.mock.calls.filter(([event]) => event.type === "cwa:export-status")
+      ).toHaveLength(0);
+
+      windowDispatch.mockClear();
+      documentDispatch.mockClear();
+      const fallbackDispatch = vi.fn();
+      await makeExporter({
+        window  : null,
+        document: { dispatchEvent: fallbackDispatch },
+      }).copy();
+      expect(
+        windowDispatch.mock.calls.filter(([event]) => event.type === "cwa:export-status")
+      ).toHaveLength(0);
+      expect(fallbackDispatch).toHaveBeenCalledTimes(1);
+      expect(fallbackDispatch.mock.calls[0][0].type).toBe("cwa:export-status");
+    } finally {
+      windowDispatch.mockRestore();
+      documentDispatch.mockRestore();
+    }
   });
 
   it("falls back to execCommand when clipboard.writeText rejects", async () => {
@@ -141,12 +214,144 @@ describe("createExporter", () => {
       fetchImpl.mock.calls.every(([url, init]) => {
         const href = String(url);
         const creds = init && init.credentials;
-        if (href.includes("img-1.png")) {
-          return creds === "omit";
+        if (href.includes("img-1.png") || href.includes("/files/")) {
+          return creds === "omit" && init.redirect === "error";
         }
         return true;
       })
     ).toBe(true);
+  });
+
+  it("does not fetch a private endpoint linked from the visible main", async () => {
+    const link = document.createElement("a");
+    const forbiddenPath = "/backend-api/" + "conversation";
+    link.setAttribute("download", "private.json");
+    link.setAttribute("href", forbiddenPath);
+    link.textContent = "private";
+    document.querySelector("main").appendChild(link);
+
+    const result = await exporter.saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl.mock.calls.some(([url]) => String(url) === forbiddenPath)).toBe(false);
+    expect(result.skippedMedia).toContainEqual({
+      url   : forbiddenPath,
+      reason: "forbidden_endpoint",
+    });
+  });
+
+  it.each([
+    "https://attacker.example/file.png",
+    "https://files.oaiusercontent.com.attacker.example/file.png",
+    "https://127.0.0.1/file.png",
+    "https://files.oaiusercontent.com:444/file.png",
+    "http://files.oaiusercontent.com/file.png",
+  ])("does not fetch media from a hostile destination: %s", async (hostileUrl) => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="${hostileUrl}" alt="hostile">
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.skippedMedia).toContainEqual({
+      url   : hostileUrl,
+      reason: "disallowed_host",
+    });
+  });
+
+  it.each([
+    ["disallowed_host", "https://attacker.example/file.png"],
+    ["forbidden_endpoint", "https://chatgpt.com/" + "backend-api/" + "conversation"],
+  ])("rejects a response URL with reason %s before reading its blob", async (reason, responseUrl) => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/allowed.png" alt="allowed">
+        </div>
+      </main>`
+    );
+    const blob = vi.fn(async () => new Blob(["secret"]));
+    fetchImpl.mockImplementation(async () => ({
+      ok        : true,
+      status    : 200,
+      url       : responseUrl,
+      redirected: false,
+      blob,
+    }));
+
+    const result = await makeExporter().saveZip();
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://files.oaiusercontent.com/allowed.png",
+      expect.objectContaining({ credentials: "omit", redirect: "error" })
+    );
+    expect(blob).not.toHaveBeenCalled();
+    expect(result.failedMedia).toContainEqual({
+      url: "https://files.oaiusercontent.com/allowed.png",
+      reason,
+    });
+  });
+
+  it.each([
+    ["followed redirect", true, undefined],
+    ["opaque redirect", false, "opaqueredirect"],
+  ])("rejects a %s response before reading its blob", async (_label, redirected, type) => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/redirect.png" alt="redirect">
+        </div>
+      </main>`
+    );
+    const blob = vi.fn(async () => new Blob(["redirected"]));
+    fetchImpl.mockImplementation(async (url) => ({
+      ok    : true,
+      status: 200,
+      url   : String(url),
+      redirected,
+      type,
+      blob,
+    }));
+
+    const result = await makeExporter().saveZip();
+
+    expect(blob).not.toHaveBeenCalled();
+    expect(result.failedMedia).toContainEqual({
+      url   : "https://files.oaiusercontent.com/redirect.png",
+      reason: "redirected_response",
+    });
+  });
+
+  it("rejects a missing response URL before reading its blob", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/missing-url.png" alt="missing">
+        </div>
+      </main>`
+    );
+    const blob = vi.fn(async () => new Blob(["missing"]));
+    fetchImpl.mockImplementation(async () => ({
+      ok        : true,
+      status    : 200,
+      url       : "",
+      redirected: false,
+      blob,
+    }));
+
+    const result = await makeExporter().saveZip();
+
+    expect(blob).not.toHaveBeenCalled();
+    expect(result.failedMedia).toContainEqual({
+      url   : "https://files.oaiusercontent.com/missing-url.png",
+      reason: "invalid_response_url",
+    });
   });
 
   it("zips locally generated chat.md, manifests, and visible media without conversation.json", async () => {
@@ -155,25 +360,38 @@ describe("createExporter", () => {
     expect(result.ok).toBe(true);
     expect(result.filename).toBe("cwa-widget-export-2026-08-18.zip");
     expect(result.includedJson).toBeUndefined();
-    expect(result.mediaCount).toBe(1);
+    expect(result.mediaCount).toBe(2);
     expect(result.formats).toEqual(["md", "zip"]);
     expect(result.files).toContain("chat.md");
     expect(result.files).toContain("MANIFEST.md");
     expect(result.files).toContain("manifest.json");
     expect(result.files).toContain("media/001-plot.png");
-    expect(result.files).not.toContain("conversation.json");
+    expect(result.files).toContain("media/002-output-csv.csv");
+    expect(result.manifestObject.media.workflow).toBe("visible-dom");
     expect(result.manifest).toContain("`unloaded_messages`");
     expect(result.manifest).not.toContain("conversation.json");
     expect(result.markdown).toContain("media/001-plot.png");
     expect(result.manifestObject.source.authority).toBe("observed-ui");
-    expect(lastZip).toBeInstanceOf(Blob);
+    expect(lastFakeZip.fileCalls.map(([path]) => path)).toEqual([
+      "chat.md",
+      "MANIFEST.md",
+      "manifest.json",
+      "media/001-plot.png",
+      "media/002-output-csv.csv",
+    ]);
+    expect(result.files).toEqual(Object.keys(lastFakeZip.files));
 
-    const zipFiles = Object.keys(new FakeZip().files);
-    expect(zipFiles).not.toContain("conversation.json");
+    expect(result.files).not.toContain("conversation.json");
 
     const mediaFetch = fetchImpl.mock.calls.find(([url]) => String(url).includes("img-1.png"));
     expect(mediaFetch).toBeTruthy();
-    expect(mediaFetch[1]).toMatchObject({ credentials: "omit" });
+    expect(mediaFetch[1]).toMatchObject({ credentials: "omit", redirect: "error" });
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual(
+      expect.arrayContaining([
+        "https://files.oaiusercontent.com/img-1.png",
+        "https://chatgpt.com/files/abc",
+      ])
+    );
     expect(privateFetches(fetchImpl)).toEqual([]);
   });
 
@@ -212,9 +430,11 @@ describe("createExporter", () => {
       const href = String(url);
       const bytes = href.includes("img-b") ? 50 : 4;
       return {
-        ok    : true,
-        status: 200,
-        blob  : async () => new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        ok        : true,
+        status    : 200,
+        url       : href,
+        redirected: false,
+        blob      : async () => new Blob([new Uint8Array(bytes)], { type: "image/png" }),
       };
     });
 
@@ -265,6 +485,124 @@ describe("createExporter", () => {
     expect(result.files).toContain("chat.md");
   });
 
+  it("aborts and finishes when the collection deadline fires during fetch", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/hung-fetch.png" alt="hung fetch">
+        </div>
+      </main>`
+    );
+    const controller = {
+      signal: { aborted: false },
+      abort : vi.fn(() => {
+        controller.signal.aborted = true;
+      }),
+    };
+    fetchImpl.mockImplementation(() => new Promise(() => {}));
+    const bounded = makeExporter({
+      abortControllerFactory: () => controller,
+    });
+
+    const pending = bounded.saveZip();
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(fetchImpl.mock.calls[0][1]).toMatchObject({
+      credentials: "omit",
+      redirect   : "error",
+      signal     : controller.signal,
+    });
+    timers.fireAll();
+    const result = await pending;
+
+    expect(controller.abort).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(result.skippedMedia).toContainEqual({
+      url   : "https://files.oaiusercontent.com/hung-fetch.png",
+      reason: "time_cap",
+    });
+  });
+
+  it("aborts and finishes when the collection deadline fires during blob()", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/hung-blob.png" alt="hung blob">
+        </div>
+      </main>`
+    );
+    const controller = {
+      signal: { aborted: false },
+      abort : vi.fn(() => {
+        controller.signal.aborted = true;
+      }),
+    };
+    const blob = vi.fn(() => new Promise(() => {}));
+    fetchImpl.mockImplementation(async (url) => ({
+      ok        : true,
+      status    : 200,
+      url       : String(url),
+      redirected: false,
+      blob,
+    }));
+    const bounded = makeExporter({
+      abortControllerFactory: () => controller,
+    });
+
+    const pending = bounded.saveZip();
+    await vi.waitFor(() => expect(blob).toHaveBeenCalledTimes(1));
+    timers.fireAll();
+    const result = await pending;
+
+    expect(controller.abort).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(result.skippedMedia).toContainEqual({
+      url   : "https://files.oaiusercontent.com/hung-blob.png",
+      reason: "time_cap",
+    });
+  });
+
+  it("uses Content-Length to reject oversized media before blob()", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <img src="https://files.oaiusercontent.com/declared-large.png" alt="large">
+        </div>
+      </main>`
+    );
+    const controller = {
+      signal: { aborted: false },
+      abort : vi.fn(() => {
+        controller.signal.aborted = true;
+      }),
+    };
+    const blob = vi.fn(async () => new Blob(["not read"]));
+    const headers = {
+      get: vi.fn((name) => name === "content-length" ? "11" : null),
+    };
+    fetchImpl.mockImplementation(async (url) => ({
+      ok        : true,
+      status    : 200,
+      url       : String(url),
+      redirected: false,
+      headers,
+      blob,
+    }));
+    const bounded = makeExporter({
+      abortControllerFactory: () => controller,
+      mediaLimits: { maxBytesEach: 10 },
+    });
+
+    const result = await bounded.saveZip();
+
+    expect(headers.get).toHaveBeenCalledWith("content-length");
+    expect(controller.abort).toHaveBeenCalledTimes(1);
+    expect(blob).not.toHaveBeenCalled();
+    expect(result.failedMedia).toContainEqual({
+      url   : "https://files.oaiusercontent.com/declared-large.png",
+      reason: "too_large",
+    });
+  });
+
   it("returns jszip_missing without throwing when JSZip is absent", async () => {
     const bare = makeExporter({ JSZip: undefined });
 
@@ -294,6 +632,7 @@ describe("createExporter", () => {
     expect(md).toMatchObject({ ok: false, error: "download_denied" });
     expect(zip).toMatchObject({ ok: false, error: "download_denied" });
     expect(md.markdown).toContain("## User");
+    expect(zip.files).toEqual(Object.keys(lastFakeZip.files));
     expect(privateFetches(fetchImpl)).toEqual([]);
   });
 
@@ -313,23 +652,41 @@ describe("createExporter", () => {
   });
 
   it("returns duplicate while a ZIP is in flight", async () => {
-    let release;
-    fetchImpl.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        })
-    );
+    let releaseFirst;
+    let firstUrl;
+    let fetchCount = 0;
+    fetchImpl.mockImplementation((url) => {
+      const href = String(url);
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        firstUrl = href;
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({
+        ok        : true,
+        status    : 200,
+        url       : href,
+        redirected: false,
+        blob      : async () => new Blob(["media"], { type: "application/octet-stream" }),
+      });
+    });
+
     const first = exporter.saveZip();
     const second = await exporter.saveZip();
     expect(second).toMatchObject({ ok: false, error: "duplicate" });
-    release({
-      ok    : true,
-      status: 200,
-      blob  : async () => new Blob(["PNG"], { type: "image/png" }),
+    releaseFirst({
+      ok        : true,
+      status    : 200,
+      url       : firstUrl,
+      redirected: false,
+      blob      : async () => new Blob(["PNG"], { type: "image/png" }),
     });
     const done = await first;
     expect(done.ok).toBe(true);
+    expect(done.mediaCount).toBe(2);
+    expect(fetchCount).toBe(2);
   });
 
   it("returns cancelled when the abort signal is already aborted", async () => {

@@ -74,8 +74,13 @@
     "media": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["workflow"],
       "properties": {
         "included": { "type": "integer", "minimum": 0 },
+        "workflow": {
+          "description": "Mounted under main, excluding nav, CWA chrome, and CSS-hidden ancestors. This does not mean viewport visibility.",
+          "enum": ["visible-dom"]
+        },
         "failed": {
           "type": "array",
           "items": {

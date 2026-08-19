@@ -14,6 +14,10 @@ const {
   SIDEBAR_DEFAULT,
   EVENTS,
   formatExportStatus,
+  isChromeOwnedNode,
+  shouldIgnoreMutations,
+  isSidebarCandidate,
+  isTypingTarget,
 } = chrome;
 
 test("clampSidebarWidth clamps to 200–420 and rounds", () => {
@@ -96,6 +100,83 @@ test("formatExportStatus covers copy, zip, and denial codes", () => {
   assert.equal(formatExportStatus({ ok: false, code: "jszip_missing" }), "ZIP unavailable (JSZip missing)");
   assert.equal(formatExportStatus({ ok: false, code: "clipboard_denied" }), "Clipboard permission denied");
   assert.equal(formatExportStatus({ ok: false, code: "duplicate" }), "Export already in progress");
+  assert.equal(
+    formatExportStatus({ ok: true, code: "safe_mode" }),
+    "Safe mode: chrome limited, export still available"
+  );
+  assert.equal(
+    formatExportStatus({ ok: true, code: "native_unavailable" }),
+    "Native companion unavailable; used browser download"
+  );
+});
+
+test("isTypingTarget recognizes form controls and plaintext-only editors", () => {
+  const editor = {};
+  const plaintextChild = {
+    tagName: "SPAN",
+    closest(selector) {
+      return selector.includes("plaintext-only") ? editor : null;
+    },
+  };
+
+  assert.equal(isTypingTarget({ tagName: "INPUT" }), true);
+  assert.equal(isTypingTarget({ tagName: "textarea" }), true);
+  assert.equal(isTypingTarget({ tagName: "DIV", isContentEditable: true }), true);
+  assert.equal(isTypingTarget(plaintextChild), true);
+  assert.equal(isTypingTarget({ tagName: "DIV" }), false);
+  assert.equal(isTypingTarget(null), false);
+});
+
+test("isSidebarCandidate rejects chrome decoys and exact geometry bounds", () => {
+  function sidebar(rect, chromeOwned) {
+    return {
+      nodeType: 1,
+      closest() {
+        return chromeOwned ? this : null;
+      },
+      getBoundingClientRect() {
+        return rect;
+      },
+    };
+  }
+
+  assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 240, left: 20 }, false)), true);
+  assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 240, left: 20 }, true)), false);
+  assert.equal(isSidebarCandidate(sidebar({ height: 120, width: 240, left: 20 }, false)), false);
+  assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 40, left: 20 }, false)), false);
+  assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 240, left: 280 }, false)), false);
+});
+
+test("shouldIgnoreMutations ignores only chrome-owned mutation batches", () => {
+  function element(chromeOwned, className) {
+    return {
+      nodeType: 1,
+      className: className || "",
+      closest(selector) {
+        return chromeOwned && selector === "[data-cwa-chrome]" ? this : null;
+      },
+    };
+  }
+
+  const chromeNode = element(true);
+  const providerNode = element(false);
+  const scroller = element(false, "cwa-scroller");
+
+  assert.equal(isChromeOwnedNode(chromeNode), true);
+  assert.equal(shouldIgnoreMutations([
+    { type: "attributes", target: chromeNode },
+    { type: "childList", target: providerNode, addedNodes: [chromeNode], removedNodes: [] },
+  ]), true);
+  assert.equal(shouldIgnoreMutations([
+    { type: "childList", target: chromeNode, addedNodes: [], removedNodes: [providerNode] },
+  ]), true);
+  assert.equal(shouldIgnoreMutations([
+    { type: "childList", target: providerNode, addedNodes: [chromeNode, providerNode], removedNodes: [] },
+  ]), false);
+  assert.equal(shouldIgnoreMutations([
+    { type: "attributes", target: scroller },
+  ]), false);
+  assert.equal(shouldIgnoreMutations([]), false);
 });
 
 test("requiring chrome.js in node does not boot DOM chrome", () => {
