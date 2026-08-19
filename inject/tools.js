@@ -78,12 +78,18 @@
   }
 
   function run(id, context) {
-    var item = api.find(id);
+    var item = find(id);
     var diag;
     var snap;
+    var delivered;
+    var onDiag;
+    var target;
     context = context || {};
     if (!item) {
       return { ok: false, error: "unknown_tool" };
+    }
+    if (CATALOG.indexOf(item) === -1) {
+      return { ok: false, error: "unhandled_tool" };
     }
     if (item.event) {
       if (!emit(item.event, context.window || global)) {
@@ -120,12 +126,41 @@
       if (!diag || typeof diag.emit !== "function") {
         return { ok: false, error: "diagnostics_unavailable" };
       }
-      if (!canDispatch(context.window || global)) {
+      target = context.window || global;
+      if (!canDispatch(target)) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
+      delivered = false;
+      onDiag = function () {
+        delivered = true;
+      };
+      if (typeof target.addEventListener === "function" && typeof target.removeEventListener === "function") {
+        try {
+          target.addEventListener("cwa:diagnostics", onDiag);
+        } catch (_error) {
+          return { ok: false, error: "diagnostics_unavailable" };
+        }
+      }
       try {
-        diag.emit({ window: context.window || global }, snap);
+        diag.emit({ window: target }, snap);
       } catch (_error) {
+        if (typeof target.removeEventListener === "function") {
+          try {
+            target.removeEventListener("cwa:diagnostics", onDiag);
+          } catch (_remove) {
+            /* ignore */
+          }
+        }
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
+      if (typeof target.removeEventListener === "function") {
+        try {
+          target.removeEventListener("cwa:diagnostics", onDiag);
+        } catch (_remove) {
+          /* ignore */
+        }
+      }
+      if (!delivered) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
       return { ok: true, id: item.id, diagnostics: snap };

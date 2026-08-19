@@ -168,6 +168,7 @@
     if (code === "clipboard_denied") return "Clipboard permission denied";
     if (code === "download_denied") return "Download blocked";
     if (code === "unsupported_route") return "Nothing to export on this page";
+    if (code === "route_changed") return "Conversation changed during export";
     if (code === "safe_mode") return "Safe mode: chrome limited, export still available";
     if (code === "native_unavailable") return "Native companion unavailable; used browser download";
     return detail.message || code;
@@ -260,9 +261,9 @@
       }
     }
     if (withThread.length) {
-      return withThread[0];
+      return withThread[withThread.length - 1];
     }
-    return visible[0] || null;
+    return visible[visible.length - 1] || null;
   }
 
   function isSettledConversationRoute(href) {
@@ -634,11 +635,17 @@
   }
 
   function mountHandle(node) {
-    var existing = qs("." + NS + "-sidebar-handle", node);
-    if (existing) {
-      existing.setAttribute("data-cwa-chrome", "1");
-      handleEl = existing;
+    var leftover;
+    if (!node) return;
+    if (handleEl && node.contains(handleEl)) {
       return;
+    }
+    leftover = qs("." + NS + "-sidebar-handle", node);
+    if (leftover && leftover.parentNode) {
+      leftover.parentNode.removeChild(leftover);
+    }
+    if (handleEl && handleEl.parentNode) {
+      handleEl.parentNode.removeChild(handleEl);
     }
     handleEl = el("button", {
       type: "button",
@@ -709,8 +716,12 @@
         priority: snapshot.rootPriority,
       });
     } else {
-      for (i = 0; i < SIDEBAR_STYLE_PROPERTIES.length - 1; i++) {
-        node.style.removeProperty(SIDEBAR_STYLE_PROPERTIES[i]);
+      for (i = 0; i < SIDEBAR_STYLE_PROPERTIES.length; i++) {
+        name = SIDEBAR_STYLE_PROPERTIES[i];
+        if (name === "position") {
+          continue;
+        }
+        node.style.removeProperty(name);
       }
       if (rootStyle) rootStyle.removeProperty("--sidebar-width");
     }
@@ -731,7 +742,7 @@
   }
 
   function syncSidebar() {
-    if (isSafe()) return;
+    if (isSafe() || dragging) return;
     var node = findSidebar();
     if (!node) {
       if (sidebarEl) {
@@ -795,12 +806,11 @@
     return y;
   }
 
-  function isThreadMessage(node) {
-    var pane;
+  function isThreadMessage(node, pane) {
     if (!node) {
       return false;
     }
-    pane = conversationMain();
+    pane = pane || conversationMain();
     if (!pane || !pane.contains(node)) {
       return false;
     }
@@ -827,7 +837,7 @@
       nodes = qsa(messageSelector(), pane);
     }
     return nodes.filter(function (node) {
-      return isThreadMessage(node) && node.getBoundingClientRect().height > 0;
+      return isThreadMessage(node, pane) && node.getBoundingClientRect().height > 0;
     });
   }
 
@@ -865,7 +875,12 @@
 
   function scheduleMinimap() {
     if (isSafe()) return;
+    ensureRuntime();
     if (scheduler) {
+      if (rafMinimap) {
+        cancelAnimationFrame(rafMinimap);
+        rafMinimap = 0;
+      }
       scheduler.schedule("minimap", rebuildMinimap, { kind: "raf" });
       return;
     }
@@ -1424,7 +1439,12 @@
   }
 
   function scheduleCompatRefresh() {
+    ensureRuntime();
     if (scheduler) {
+      if (mutateTimer) {
+        clearTimeout(mutateTimer);
+        mutateTimer = 0;
+      }
       scheduler.schedule(COMPAT_JOB, onSpaNavigate, { kind: "timeout", delay: 80 });
       return;
     }
@@ -1470,6 +1490,14 @@
   function ensureRuntime() {
     if (!scheduler && global.CwaScheduler && typeof global.CwaScheduler.createScheduler === "function") {
       scheduler = global.CwaScheduler.createScheduler();
+      if (mutateTimer) {
+        clearTimeout(mutateTimer);
+        mutateTimer = 0;
+      }
+      if (rafMinimap) {
+        cancelAnimationFrame(rafMinimap);
+        rafMinimap = 0;
+      }
     }
     if (!lifecycle && global.CwaLifecycle && typeof global.CwaLifecycle.createLifecycle === "function") {
       lifecycle = global.CwaLifecycle.createLifecycle({
@@ -1499,6 +1527,8 @@
             }
             dragging = false;
             emitStatusSafe(snap);
+          } else {
+            onSpaNavigate();
           }
         },
       });

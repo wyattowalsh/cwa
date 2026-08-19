@@ -859,6 +859,43 @@ describe("createExporter", () => {
     expect(authOrCookieHeaders(fetchImpl)).toEqual([]);
     expect(zipped.files).not.toContain("conversation.json");
   });
+
+  it("fails with route_changed when the conversation id changes during media fetch", async () => {
+    const loc = { href: CONV_URL, origin: "https://chatgpt.com" };
+    fetchImpl.mockImplementation(async (url) => {
+      loc.href = "https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+      return {
+        ok        : true,
+        status    : 200,
+        url       : String(url),
+        redirected: false,
+        blob      : async () => new Blob(["PNG"], { type: "image/png" }),
+      };
+    });
+
+    const result = await makeExporter({ location: loc }).saveZip();
+
+    expect(result).toMatchObject({ ok: false, error: "route_changed" });
+    expect(downloads).toEqual([]);
+  });
+
+  it("rewrites file-card markdown hrefs onto archived media paths", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <p>See <a data-testid="file-card" href="/files/abc">output.csv</a></p>
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+    const mediaPath = result.files.find((path) => path.startsWith("media/"));
+
+    expect(result.ok).toBe(true);
+    expect(mediaPath).toBeTruthy();
+    expect(result.markdown).toContain(`](${mediaPath})`);
+    expect(result.markdown).not.toContain("/files/abc");
+  });
 });
 
 describe("copyText", () => {

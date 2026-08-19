@@ -41,6 +41,23 @@ describe("CwaTools", () => {
     expect(yamlActions).toEqual(
       runtime.filter((item) => item.action).map((item) => item.action)
     );
+    const yamlTuples = catalog.split(/^\s*-\s+id:\s+/m).slice(1).map((chunk) => {
+      const id = (chunk.match(/^\S+/) || [])[0];
+      const eventMatch = chunk.match(/^\s+event:\s+(\S+)/m);
+      const actionMatch = chunk.match(/^\s+action:\s+(\S+)/m);
+      return {
+        id,
+        event : eventMatch ? eventMatch[1] : null,
+        action: actionMatch ? actionMatch[1] : null,
+      };
+    });
+    expect(yamlTuples).toEqual(
+      runtime.map((item) => ({
+        id    : item.id,
+        event : item.event || null,
+        action: item.action || null,
+      }))
+    );
   });
 
   it("freezes catalog records while catalog returns independent copies", () => {
@@ -197,29 +214,31 @@ describe("CwaTools", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it("reports unhandled_tool for a catalog item without an adapter", () => {
-    vi.spyOn(tools, "find").mockReturnValue({ id: "no-adapter" });
+  it("reports unknown_tool for ids missing from the catalog", () => {
     expect(tools.run("no-adapter")).toEqual({
       ok   : false,
-      error: "unhandled_tool",
+      error: "unknown_tool",
     });
   });
 
   it("runs diagnostics without cookies or conversation JSON", () => {
     vi.stubGlobal("CwaDiagnostics", diagnostics);
-    const dispatchEvent = vi.fn();
+    const win = new EventTarget();
+    const events = [];
+    win.addEventListener("cwa:diagnostics", (event) => {
+      events.push(event.type);
+    });
     const result = tools.run("diagnostics", {
       probe    : { message: { hit: true, count: 1 } },
       lifecycle: { getState: () => "ready" },
       safeMode : { active: false },
       href     : "https://chatgpt.com/settings",
-      window   : { CustomEvent, dispatchEvent },
+      window   : win,
     });
     expect(result.ok).toBe(true);
     expect(result.diagnostics.hrefKind).toBe("settings");
     expect(JSON.stringify(result)).not.toContain("conversation.json");
-    expect(dispatchEvent).toHaveBeenCalledTimes(1);
-    expect(dispatchEvent.mock.calls[0][0].type).toBe("cwa:diagnostics");
+    expect(events).toEqual(["cwa:diagnostics"]);
   });
 
   it("reports diagnostics_unavailable when emit is missing or throws", () => {

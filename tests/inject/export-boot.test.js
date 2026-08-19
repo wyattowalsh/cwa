@@ -124,9 +124,27 @@ describe("export page-world boot", () => {
     }
   });
 
-  it("falls back to a browser download when the native host rejects", async () => {
+  it("does not fall back to a browser download after a native_error", async () => {
     const nativeHost = {
       saveFile: vi.fn(() => Promise.reject(new Error("native save failed"))),
+    };
+    const runtime = bootExport({ nativeHost });
+
+    try {
+      await expect(runtime.scriptWindow.CwaExport.saveMarkdown()).resolves.toMatchObject({
+        ok   : false,
+        error: "download_denied",
+      });
+      expect(nativeHost.saveFile).toHaveBeenCalledTimes(1);
+      expect(runtime.triggerDownload).not.toHaveBeenCalled();
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("falls back to a browser download when the native payload is rejected", async () => {
+    const nativeHost = {
+      saveFile: vi.fn(async () => ({ ok: false, error: "invalid_payload" })),
     };
     const runtime = bootExport({ nativeHost });
 
@@ -262,6 +280,39 @@ describe("export page-world boot", () => {
         expect(runtime.scriptWindow.CwaExport.saveMarkdown).toHaveBeenCalledTimes(1);
       });
       expect(second.handled).toBe(true);
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("emits duplicate for a second in-flight save-zip without starting another export", async () => {
+    const runtime = bootExport({ withJSZip: true });
+    const statuses = [];
+
+    try {
+      runtime.window.addEventListener("cwa:export-status", (event) => {
+        statuses.push(event.detail);
+      });
+      runtime.scriptWindow.CwaExport.saveZip = vi.fn(() => new Promise(() => {}));
+
+      const first = {};
+      const second = {};
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-zip", {
+        detail: first,
+      }));
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-zip", {
+        detail: second,
+      }));
+      expect(first.handled).toBe(true);
+      expect(second.handled).toBe(true);
+      await vi.waitFor(() => {
+        expect(statuses).toContainEqual(expect.objectContaining({
+          action: "save-zip",
+          ok    : false,
+          code  : "duplicate",
+        }));
+      });
+      expect(runtime.scriptWindow.CwaExport.saveZip).toHaveBeenCalledTimes(1);
     } finally {
       runtime.window.close();
     }

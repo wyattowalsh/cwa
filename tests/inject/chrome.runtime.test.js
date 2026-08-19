@@ -92,6 +92,11 @@ function bootChrome(options = {}) {
         safeModeApi.enter("test");
       }
     },
+    resetSafeMode() {
+      if (safeModeApi && typeof safeModeApi.reset === "function") {
+        safeModeApi.reset();
+      }
+    },
   };
 }
 
@@ -582,6 +587,72 @@ describe("chrome runtime isolation", () => {
       runtime.flushTimeouts();
       expect(runtime.document.getElementById("cwa-minimap")).toBeNull();
       expect(runtime.window.CwaChrome.runtime().lifecycle).toBe("safe");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("does not snap sidebar width while a resize drag is in progress", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      expect(handle).not.toBeNull();
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointerdown", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 0,
+        pointerId: 1,
+      }));
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 80,
+        pointerId: 1,
+      }));
+      expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushTimeouts();
+
+      expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("remounts chrome when safe mode deactivates", () => {
+    const runtime = bootChrome({
+      url: "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+    });
+
+    try {
+      runtime.enterSafeMode();
+      expect(runtime.document.getElementById("cwa-minimap")).toBeNull();
+      expect(runtime.document.getElementById("cwa-toolbar")).not.toBeNull();
+
+      runtime.resetSafeMode();
+      expect(runtime.document.getElementById("cwa-minimap")).not.toBeNull();
+      expect(runtime.document.getElementById("cwa-toolbar")).not.toBeNull();
     } finally {
       runtime.window.close();
     }

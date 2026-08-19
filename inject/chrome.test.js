@@ -108,6 +108,10 @@ test("formatExportStatus covers copy, zip, and denial codes", () => {
     formatExportStatus({ ok: true, code: "native_unavailable" }),
     "Native companion unavailable; used browser download"
   );
+  assert.equal(
+    formatExportStatus({ ok: false, code: "route_changed" }),
+    "Conversation changed during export"
+  );
 });
 
 test("isTypingTarget recognizes form controls and plaintext-only editors", () => {

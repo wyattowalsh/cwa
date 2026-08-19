@@ -58,4 +58,21 @@ describe("CwaSafeMode", () => {
     expect(mode.isActive()).toBe(false);
     expect(mode.observe(miss).active).toBe(true);
   });
+
+  it("leaves safe mode and notifies when critical selectors return", () => {
+    const changes = [];
+    const mode = safeModeMod.createSafeMode({
+      strikes : 1,
+      onChange: (snap) => changes.push(snap.active),
+    });
+    document.body.replaceChildren(document.createElement("main"));
+    expect(mode.observe(selectors.probe(document)).active).toBe(true);
+
+    const msg = document.createElement("div");
+    msg.setAttribute("data-message-author-role", "user");
+    document.body.appendChild(msg);
+    expect(mode.observe(selectors.probe(document)).active).toBe(false);
+    expect(mode.isActive()).toBe(false);
+    expect(changes).toEqual([true, false]);
+  });
 });

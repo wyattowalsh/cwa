@@ -33,12 +33,18 @@
     function observe(probeResult) {
       var selectors = global.CwaSelectors;
       var misses;
-      if (active) {
-        return snapshot();
-      }
       misses = selectors && typeof selectors.criticalMisses === "function"
         ? selectors.criticalMisses(probeResult)
         : [];
+      if (active) {
+        if (!misses.length) {
+          active  = false;
+          strikes = 0;
+          reason  = "";
+          notify();
+        }
+        return snapshot();
+      }
       if (misses.length) {
         strikes += 1;
         reason = "critical_miss:" + misses.join(",");

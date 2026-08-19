@@ -80,6 +80,10 @@ def fail(errors: list[str]) -> int:
     return 1
 
 
+def as_mapping(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
 def derive_inject_runtime(root: Path) -> list[Path]:
     inject_root = root / "inject"
     return sorted(
@@ -131,9 +135,12 @@ def check_shape(root: Path) -> list[str]:
             if not isinstance(schema, dict):
                 errors.append("schema JSON must be an object")
             else:
-                formats = ((schema.get("properties") or {}).get("formats") or {})
-                items = formats.get("items") or {}
-                enum = items.get("enum") or []
+                properties = as_mapping(schema.get("properties"))
+                formats = as_mapping(properties.get("formats"))
+                items = as_mapping(formats.get("items"))
+                enum = items.get("enum")
+                if not isinstance(enum, list):
+                    enum = []
                 if "json" in enum:
                     errors.append("schema formats must not include json (conversation payload)")
                 errors.extend(
@@ -148,13 +155,11 @@ def check_shape(root: Path) -> list[str]:
                         ),
                     )
                 )
-                authority = (
-                    ((schema.get("properties") or {}).get("source") or {})
-                    .get("properties", {})
-                    .get("authority", {})
-                    .get("enum")
-                    or []
-                )
+                source = as_mapping(properties.get("source"))
+                source_props = as_mapping(source.get("properties"))
+                authority = as_mapping(source_props.get("authority")).get("enum")
+                if not isinstance(authority, list):
+                    authority = []
                 if "observed-ui" not in authority or "local-cwa" not in authority:
                     errors.append("schema source.authority must allow observed-ui and local-cwa")
     if spec_path.is_file():
@@ -326,10 +331,48 @@ def check_strict(root: Path) -> tuple[list[str], list[str]]:
     return errors, skipped
 
 
+def pake_non_vendor_js(root: Path) -> list[Path]:
+    path = root / "pake.cwa.json"
+    if not path.is_file():
+        return []
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(config, dict):
+        return []
+    inject = config.get("inject")
+    if not isinstance(inject, list):
+        return []
+    out: list[Path] = []
+    for entry in inject:
+        if not isinstance(entry, str):
+            continue
+        rel = entry[2:] if entry.startswith("./") else entry
+        file_path = root / rel
+        if file_path.suffix.lower() != ".js":
+            continue
+        if "vendor" in Path(rel).parts:
+            continue
+        out.append(file_path)
+    return out
+
+
 def check_runtime(root: Path) -> list[str]:
     errors: list[str] = []
+    files = derive_inject_runtime(root)
+    if not files:
+        return ["runtime scan found no inject JavaScript"]
+    scanned = {path.resolve() for path in files}
+    required = pake_non_vendor_js(root)
+    if not required:
+        errors.append("runtime scan could not derive Pake inject JavaScript")
+    for path in required:
+        rel = path.relative_to(root).as_posix()
+        if path.resolve() not in scanned:
+            errors.append(f"runtime scan missing Pake inject {rel}")
     compiled = [(pat, re.compile(pat)) for pat in FORBIDDEN_RUNTIME]
-    for path in derive_inject_runtime(root):
+    for path in files:
         rel = path.relative_to(root).as_posix()
         if not path.is_file():
             continue

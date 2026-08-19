@@ -75,6 +75,55 @@
   var LANGUAGE_RE = /^[A-Za-z0-9_+-]+$/;
   var UUID_RE     = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   var CONV_ID_RE  = /\/c\/([A-Za-z0-9_-]+)/;
+  var SKIP_EXPORT_TAGS = {
+    SCRIPT  : true,
+    STYLE   : true,
+    NOSCRIPT: true,
+    TEMPLATE: true,
+    SELECT  : true,
+    OPTION  : true,
+  };
+  var BLOCK_BREAK_TAGS = {
+    ADDRESS   : true,
+    ARTICLE   : true,
+    ASIDE     : true,
+    BLOCKQUOTE: true,
+    DETAILS   : true,
+    DIALOG    : true,
+    DIV       : true,
+    DL        : true,
+    DT        : true,
+    DD        : true,
+    FIELDSET  : true,
+    FIGCAPTION: true,
+    FIGURE    : true,
+    FOOTER    : true,
+    FORM      : true,
+    H1        : true,
+    H2        : true,
+    H3        : true,
+    H4        : true,
+    H5        : true,
+    H6        : true,
+    HEADER    : true,
+    HR        : true,
+    LI        : true,
+    MAIN      : true,
+    NAV       : true,
+    OL        : true,
+    P         : true,
+    PRE       : true,
+    SECTION   : true,
+    TABLE     : true,
+    TBODY     : true,
+    TD        : true,
+    TFOOT     : true,
+    TH        : true,
+    THEAD     : true,
+    TR        : true,
+    UL        : true,
+    SUMMARY   : true,
+  };
 
   function yamlDoubleQuoted(value) {
     var s = value == null ? "" : String(value);
@@ -441,6 +490,15 @@
     return Boolean(parseConversationIdFromUrl(href));
   }
 
+  function sameExportRoute(left, right) {
+    var idLeft  = parseConversationIdFromUrl(left);
+    var idRight = parseConversationIdFromUrl(right);
+    if (idLeft || idRight) {
+      return idLeft === idRight;
+    }
+    return String(left || "") === String(right || "");
+  }
+
   function slugifyFilename(title, exportedAt) {
     var date = String(exportedAt || "").slice(0, 10) || "export";
     var slug = String(title || "chat")
@@ -603,6 +661,8 @@
           out += href ? "[" + inner + "](" + href + ")" : inner;
         } else if (tag === "IMG") {
           /* images become sibling blocks in walkBlocks */
+        } else if (tag === "UL" || tag === "OL") {
+          /* nested lists are rendered by listToMarkdown */
         } else {
           out += inlineMarkdown(child);
         }
@@ -611,12 +671,20 @@
     return out;
   }
 
-  function listToMarkdown(el) {
+  function listToMarkdown(el, indent) {
     var ordered = el.tagName === "OL";
     var items   = el.querySelectorAll ? el.querySelectorAll(":scope > li") : [];
     var lines   = [];
     var i;
+    var j;
+    var n;
     var prefix;
+    var item;
+    var nested;
+    var kids;
+    var child;
+    var line;
+    indent = indent || "";
     if (!items.length && el.children) {
       items = [];
       for (i = 0; i < el.children.length; i += 1) {
@@ -625,44 +693,128 @@
         }
       }
     }
+    n = 0;
     for (i = 0; i < items.length; i += 1) {
-      if (hasCssHiddenAncestor(items[i])) {
+      item = items[i];
+      if (hasCssHiddenAncestor(item)) {
         continue;
       }
-      prefix = ordered ? String(i + 1) + ". " : "- ";
-      lines.push(prefix + inlineMarkdown(items[i]).trim());
+      n += 1;
+      prefix = ordered ? String(n) + ". " : "- ";
+      nested = [];
+      kids = item.children || [];
+      for (j = 0; j < kids.length; j += 1) {
+        child = kids[j];
+        if ((child.tagName === "UL" || child.tagName === "OL") && !hasCssHiddenAncestor(child)) {
+          nested.push(listToMarkdown(child, indent + "  "));
+        }
+      }
+      line = indent + prefix + inlineMarkdown(item).trim();
+      lines.push(line);
+      for (j = 0; j < nested.length; j += 1) {
+        if (nested[j]) {
+          lines.push(nested[j]);
+        }
+      }
     }
     return lines.join("\n");
   }
 
+  function tableSectionRows(table) {
+    var rows = [];
+    var i;
+    var collection;
+    if (table && table.rows && table.rows.length != null) {
+      for (i = 0; i < table.rows.length; i += 1) {
+        rows.push(table.rows[i]);
+      }
+      return rows;
+    }
+    try {
+      collection = table.querySelectorAll(
+        ":scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr"
+      );
+    } catch (_err) {
+      collection = table.querySelectorAll("tr");
+    }
+    for (i = 0; i < collection.length; i += 1) {
+      rows.push(collection[i]);
+    }
+    return rows;
+  }
+
+  function tableRowCells(tr) {
+    var cells = [];
+    var kids;
+    var i;
+    var tag;
+    kids = tr.children || [];
+    for (i = 0; i < kids.length; i += 1) {
+      tag = kids[i].tagName;
+      if (tag === "TH" || tag === "TD") {
+        cells.push(kids[i]);
+      }
+    }
+    if (cells.length) {
+      return cells;
+    }
+    return tr.querySelectorAll ? Array.prototype.slice.call(tr.querySelectorAll("th, td")) : [];
+  }
+
   function tableToMarkdown(table) {
-    var trs  = table.querySelectorAll("tr");
+    var trs  = tableSectionRows(table);
     var rows = [];
     var i;
     var j;
     var cells;
     var cols;
+    var hiddenCols = {};
+    var width = 0;
+    var kept;
     for (i = 0; i < trs.length; i += 1) {
       if (hasCssHiddenAncestor(trs[i])) {
         continue;
       }
-      cells = trs[i].querySelectorAll("th, td");
+      cells = tableRowCells(trs[i]);
       cols  = [];
       for (j = 0; j < cells.length; j += 1) {
         if (hasCssHiddenAncestor(cells[j])) {
-          cols.push("");
+          hiddenCols[j] = true;
+          cols.push(null);
           continue;
         }
         cols.push(inlineMarkdown(cells[j]).trim().replace(/\|/g, "\\|"));
       }
       if (cols.length) {
         rows.push(cols);
+        if (cols.length > width) {
+          width = cols.length;
+        }
       }
     }
     if (!rows.length) {
       return "";
     }
-    var header = rows[0];
+    kept = [];
+    for (j = 0; j < width; j += 1) {
+      if (!hiddenCols[j]) {
+        kept.push(j);
+      }
+    }
+    if (!kept.length) {
+      return "";
+    }
+    function project(cols) {
+      var out = [];
+      var k;
+      var idx;
+      for (k = 0; k < kept.length; k += 1) {
+        idx = kept[k];
+        out.push(idx < cols.length && cols[idx] != null ? cols[idx] : "");
+      }
+      return out;
+    }
+    var header = project(rows[0]);
     var out    = [];
     var sep    = [];
     out.push("| " + header.join(" | ") + " |");
@@ -671,9 +823,25 @@
     }
     out.push("| " + sep.join(" | ") + " |");
     for (i = 1; i < rows.length; i += 1) {
-      out.push("| " + rows[i].join(" | ") + " |");
+      out.push("| " + project(rows[i]).join(" | ") + " |");
     }
     return out.join("\n");
+  }
+
+  function appendDescendantImages(el, blocks) {
+    var imgs;
+    var i;
+    var img;
+    if (!el || !el.querySelectorAll) {
+      return;
+    }
+    imgs = el.querySelectorAll("img");
+    for (i = 0; i < imgs.length; i += 1) {
+      img = extractImage(imgs[i]);
+      if (img) {
+        blocks.push(img);
+      }
+    }
   }
 
   function walkBlocks(el, blocks) {
@@ -690,7 +858,7 @@
       return;
     }
     tag = el.tagName;
-    if (tag === "BUTTON" || tag === "NAV" || tag === "FORM") {
+    if (SKIP_EXPORT_TAGS[tag] || tag === "BUTTON" || tag === "NAV" || tag === "FORM") {
       return;
     }
     if (isThinking(el)) {
@@ -706,6 +874,7 @@
       if (text) {
         blocks.push({ type: "table", markdown: text });
       }
+      appendDescendantImages(el, blocks);
       return;
     }
     if (tag === "UL" || tag === "OL") {
@@ -713,6 +882,7 @@
       if (text) {
         blocks.push({ type: "list", markdown: text });
       }
+      appendDescendantImages(el, blocks);
       return;
     }
     if (tag === "IMG") {
@@ -807,6 +977,25 @@
     return out;
   }
 
+  function citationKey(block) {
+    return String((block && block.url) || "") + "\0" + String((block && block.title) || "");
+  }
+
+  function visibleMessageContent(node) {
+    var roots;
+    var i;
+    if (!node || !node.querySelectorAll) {
+      return node;
+    }
+    roots = node.querySelectorAll("[data-message-content]");
+    for (i = 0; i < roots.length; i += 1) {
+      if (!hasCssHiddenAncestor(roots[i])) {
+        return roots[i];
+      }
+    }
+    return node;
+  }
+
   function messageFromNode(node) {
     var roleEl  = node.hasAttribute("data-message-author-role")
       ? node
@@ -821,7 +1010,7 @@
     var id      = node.getAttribute("data-message-id") ||
       (roleEl && roleEl.getAttribute("data-message-id")) ||
       "";
-    var content = node.querySelector("[data-message-content]") || node;
+    var content = visibleMessageContent(node);
     var blocks  = blocksFromContentRoot(content);
     var thinkingNodes = node.querySelectorAll(
       '[data-testid="reasoning"], [data-testid="thinking"], [data-cwa="thinking"]'
@@ -830,6 +1019,8 @@
     var i;
     var extra;
     var citations;
+    var seenCitations;
+    var key;
     for (i = 0; i < blocks.length; i += 1) {
       if (blocks[i].type === "thinking") {
         seenThinking = true;
@@ -852,7 +1043,18 @@
       }
     }
     citations = collectCitationBlocks(node);
+    seenCitations = Object.create(null);
+    for (i = 0; i < blocks.length; i += 1) {
+      if (blocks[i].type === "citation") {
+        seenCitations[citationKey(blocks[i])] = true;
+      }
+    }
     for (i = 0; i < citations.length; i += 1) {
+      key = citationKey(citations[i]);
+      if (seenCitations[key]) {
+        continue;
+      }
+      seenCitations[key] = true;
       blocks.push(citations[i]);
     }
     return {
@@ -875,6 +1077,7 @@
     var nodes = searchRoot && searchRoot.querySelectorAll
       ? Array.prototype.slice.call(searchRoot.querySelectorAll("[data-message-author-role]"))
       : [];
+    var usedFallback = false;
     var messages = [];
     var i;
     var msg;
@@ -882,6 +1085,7 @@
       nodes = Array.prototype.slice.call(
         searchRoot.querySelectorAll('article[data-testid^="conversation-turn-"]')
       );
+      usedFallback = true;
     }
     for (i = 0; i < nodes.length; i += 1) {
       if (hasCssHiddenAncestor(nodes[i])) {
@@ -890,7 +1094,10 @@
       if (
         nodes[i].parentElement &&
         typeof nodes[i].parentElement.closest === "function" &&
-        nodes[i].parentElement.closest("[data-message-author-role]")
+        (
+          nodes[i].parentElement.closest("[data-message-author-role]") ||
+          (usedFallback && nodes[i].parentElement.closest('article[data-testid^="conversation-turn-"]'))
+        )
       ) {
         continue;
       }
@@ -1035,13 +1242,13 @@
       }
     }
     if (withThread.length) {
-      return withThread[0];
+      return withThread[withThread.length - 1];
     }
-    return visible[0] || null;
+    return visible[visible.length - 1] || null;
   }
 
   function inspectScope(root) {
-    return findConversationMain(root) || root;
+    return findConversationMain(root);
   }
 
   function inspectExportSignals(root, extras) {
@@ -1063,15 +1270,41 @@
     };
   }
 
-  function isForbiddenMediaPath(pathname) {
+  function collapseMediaPath(pathname) {
     var path = String(pathname || "");
+    var parts;
+    var out;
+    var i;
+    var part;
     try {
       path = decodeURIComponent(path);
     } catch (err) {
       /* retain the undecoded path for best-effort policy checks */
     }
-    path = path.toLowerCase().replace(/\/+/g, "/");
-    return path.indexOf("/backend-api/") === 0 ||
+    path = path.replace(/\\/g, "/").toLowerCase().replace(/\/+/g, "/");
+    parts = path.split("/");
+    out = [];
+    for (i = 0; i < parts.length; i += 1) {
+      part = parts[i];
+      if (!part || part === ".") {
+        continue;
+      }
+      if (part === "..") {
+        if (out.length) {
+          out.pop();
+        }
+        continue;
+      }
+      out.push(part);
+    }
+    return "/" + out.join("/");
+  }
+
+  function isForbiddenMediaPath(pathname) {
+    var path = collapseMediaPath(pathname);
+    return path === "/backend-api" ||
+      path.indexOf("/backend-api/") === 0 ||
+      path === "/api/auth" ||
       path.indexOf("/api/auth/") === 0;
   }
 
@@ -1170,6 +1403,52 @@
     return out;
   }
 
+  function styleProperty(style, name) {
+    if (!style) {
+      return "";
+    }
+    if (typeof style.getPropertyValue === "function") {
+      try {
+        return String(style.getPropertyValue(name) || "");
+      } catch (_err) {
+        /* fall through */
+      }
+    }
+    if (name === "clip-path") {
+      return String(style.clipPath || "");
+    }
+    if (name === "content-visibility") {
+      return String(style.contentVisibility || "");
+    }
+    return String(style[name] || "");
+  }
+
+  function isDetailsOpen(node) {
+    return Boolean(node && (node.open || (node.hasAttribute && node.hasAttribute("open"))));
+  }
+
+  function isClosedDetailsContent(node) {
+    var parent = node && node.parentElement;
+    return Boolean(
+      parent &&
+      parent.tagName === "DETAILS" &&
+      !isDetailsOpen(parent) &&
+      node.tagName !== "SUMMARY"
+    );
+  }
+
+  function isClipCollapsed(style) {
+    var clip = String(styleProperty(style, "clip") || "").toLowerCase();
+    var clipPath = String(styleProperty(style, "clip-path") || "").toLowerCase();
+    if (/rect\(\s*(0|0px|1px)\s*,/.test(clip)) {
+      return true;
+    }
+    if (/inset\(\s*(50%|100%)/.test(clipPath) || /circle\(\s*0/.test(clipPath)) {
+      return true;
+    }
+    return false;
+  }
+
   function hasCssHiddenAncestor(el) {
     var node = el;
     var view;
@@ -1177,8 +1456,18 @@
     var display;
     var visibility;
     var opacity;
+    var contentVis;
     while (node && node.nodeType === ELEMENT_NODE) {
+      if (isClosedDetailsContent(node)) {
+        return true;
+      }
       if (node.hidden || (node.hasAttribute && node.hasAttribute("hidden"))) {
+        return true;
+      }
+      if (node.inert === true || (node.hasAttribute && node.hasAttribute("inert"))) {
+        return true;
+      }
+      if (node.getAttribute && node.getAttribute("aria-hidden") === "true") {
         return true;
       }
       view = node.ownerDocument && node.ownerDocument.defaultView;
@@ -1188,10 +1477,18 @@
       display    = String((style && style.display) || "").toLowerCase();
       visibility = String((style && style.visibility) || "").toLowerCase();
       opacity    = String((style && style.opacity) || "").trim();
+      contentVis = String(
+        styleProperty(style, "content-visibility") ||
+        styleProperty(node.style, "content-visibility") ||
+        ""
+      ).toLowerCase();
       if (display === "none" ||
           visibility === "hidden" ||
           visibility === "collapse" ||
-          (opacity !== "" && Number(opacity) === 0)) {
+          (opacity !== "" && Number(opacity) === 0) ||
+          contentVis === "hidden" ||
+          isClipCollapsed(style) ||
+          isClipCollapsed(node.style)) {
         return true;
       }
       node = node.parentElement;
@@ -1199,11 +1496,22 @@
     return false;
   }
 
+  function isBlockBoundary(el) {
+    if (!el || el.nodeType !== ELEMENT_NODE) {
+      return false;
+    }
+    if (BLOCK_BREAK_TAGS[el.tagName]) {
+      return true;
+    }
+    return Boolean(el.classList && el.classList.contains("cm-line"));
+  }
+
   function visibleText(el) {
     var out = "";
     var nodes;
     var i;
     var child;
+    var piece;
     if (!el) {
       return "";
     }
@@ -1211,6 +1519,9 @@
       return el.nodeValue || "";
     }
     if (el.nodeType !== ELEMENT_NODE) {
+      return "";
+    }
+    if (SKIP_EXPORT_TAGS[el.tagName]) {
       return "";
     }
     if (hasCssHiddenAncestor(el)) {
@@ -1225,7 +1536,21 @@
       if (child.nodeType === TEXT_NODE) {
         out += child.nodeValue || "";
       } else if (child.nodeType === ELEMENT_NODE) {
-        out += visibleText(child);
+        piece = visibleText(child);
+        if (!piece) {
+          continue;
+        }
+        if (isBlockBoundary(child) || child.tagName === "BR") {
+          if (out && out.charAt(out.length - 1) !== "\n") {
+            out += "\n";
+          }
+          out += piece;
+          if (out && out.charAt(out.length - 1) !== "\n") {
+            out += "\n";
+          }
+        } else {
+          out += piece;
+        }
       }
     }
     return out;
@@ -1361,8 +1686,30 @@
     return Boolean(signal && signal.aborted);
   }
 
+  function rewriteHref(url, rewrites) {
+    var href = String(url || "");
+    var stripped;
+    if (!href || !rewrites) {
+      return href;
+    }
+    if (rewrites[href]) {
+      return rewrites[href];
+    }
+    stripped = stripUrlFragment(href);
+    if (rewrites[stripped]) {
+      return rewrites[stripped];
+    }
+    return href;
+  }
+
+  function rewriteMarkdownHrefs(text, rewrites) {
+    return String(text || "").replace(/\]\(([^)\s]+)(\s+"[^"]*")?\)/g, function (_match, href, title) {
+      return "](" + rewriteHref(href, rewrites) + (title || "") + ")";
+    });
+  }
+
   function rewriteThreadMedia(thread, rewrites) {
-    rewrites = rewrites || {};
+    rewrites = rewrites || Object.create(null);
     return {
       title     : thread.title,
       url       : thread.url,
@@ -1372,8 +1719,27 @@
           role  : message.role,
           id    : message.id,
           blocks: (message.blocks || []).map(function (block) {
-            if (block.type === "image" && block.url && rewrites[block.url]) {
-              return { type: "image", url: rewrites[block.url], alt: block.alt };
+            if (block.type === "image" && block.url) {
+              return { type: "image", url: rewriteHref(block.url, rewrites), alt: block.alt };
+            }
+            if ((block.type === "paragraph" || block.type === "thinking") && block.text) {
+              return {
+                type: block.type,
+                text: rewriteMarkdownHrefs(block.text, rewrites),
+              };
+            }
+            if ((block.type === "table" || block.type === "list") && block.markdown) {
+              return {
+                type    : block.type,
+                markdown: rewriteMarkdownHrefs(block.markdown, rewrites),
+              };
+            }
+            if (block.type === "citation") {
+              return {
+                type : "citation",
+                title: block.title,
+                url  : rewriteHref(block.url, rewrites),
+              };
             }
             return block;
           }),
@@ -1505,9 +1871,9 @@
     };
     var candidates;
     var fileCardSkipped = [];
-    var seen  = {};
-    var skippedSeen = {};
-    var aliases = {};
+    var seen  = Object.create(null);
+    var skippedSeen = Object.create(null);
+    var aliases = Object.create(null);
     var list  = [];
     var i;
     var item;
@@ -1520,7 +1886,7 @@
     var parsedResponseUrl;
     var declaredSize;
     var files       = [];
-    var rewrites    = {};
+    var rewrites    = Object.create(null);
     var fetchedUrls = [];
     var failedItems = [];
     var skippedItems = [];
@@ -1950,6 +2316,7 @@
       var archiveFiles;
       var saved;
       var partial;
+      var snapshotSignals;
       if (blocked) {
         return blocked;
       }
@@ -1961,9 +2328,10 @@
           return fail("save-zip", "cancelled");
         }
         thread = snapshot();
-        if (!isSupportedExportRoute(loc.href, thread.messages.length)) {
+        if (!isSupportedExportRoute(thread.url || loc.href, thread.messages.length)) {
           return fail("save-zip", "unsupported_route");
         }
+        snapshotSignals = inspectExportSignals(root, {});
         media = await collectAndFetchMedia(thread, fetchImpl, {
           limits                : mediaLimits,
           clock                 : clock,
@@ -1979,10 +2347,20 @@
             markdown: serializeThreadToMarkdown(thread, { frontmatter: true }),
           });
         }
-        signals = inspectExportSignals(root, {
-          failedMedia : media.failed,
-          skippedMedia: media.skipped,
-        });
+        if (!sameExportRoute(thread.url, loc.href)) {
+          return fail("save-zip", "route_changed", {
+            message: "Conversation changed during export",
+          });
+        }
+        signals = {
+          unloadedMessages     : snapshotSignals.unloadedMessages,
+          closedCanvases       : snapshotSignals.closedCanvases,
+          deepResearchPanels   : snapshotSignals.deepResearchPanels,
+          codeInterpreterFiles : snapshotSignals.codeInterpreterFiles,
+          hiddenThinking       : snapshotSignals.hiddenThinking,
+          mediaFetchFailed     : (media.failed || 0) > 0,
+          mediaSkipped         : (media.skipped || 0) > 0,
+        };
         gaps     = detectExportGaps(signals);
         chatMd   = serializeThreadToMarkdown(rewriteThreadMedia(thread, media.rewrites), {
           frontmatter: true,
@@ -1992,7 +2370,7 @@
         });
         manifestObject = buildManifestObject({
           title     : thread.title,
-          url       : loc.href,
+          url       : thread.url,
           exportedAt: thread.exportedAt,
           included  : { mediaCount: media.files.length },
           gaps      : gaps,
@@ -2002,7 +2380,7 @@
         });
         manifest = buildManifestMarkdown({
           title     : thread.title,
-          url       : loc.href,
+          url       : thread.url,
           exportedAt: thread.exportedAt,
           included  : { chatMd: true, mediaCount: media.files.length },
           gaps      : gaps,
@@ -2088,6 +2466,7 @@
     buildManifestObject       : buildManifestObject,
     parseConversationIdFromUrl: parseConversationIdFromUrl,
     isSupportedExportRoute    : isSupportedExportRoute,
+    sameExportRoute           : sameExportRoute,
     slugifyFilename           : slugifyFilename,
     sanitizeMediaFilename     : sanitizeMediaFilename,
     collectVisibleThread      : collectVisibleThread,

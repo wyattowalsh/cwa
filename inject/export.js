@@ -31,31 +31,42 @@
   }
 
   function emitDuplicate(action) {
-    var Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
-    if (!Ev || typeof global.dispatchEvent !== "function") {
-      return;
+    var Ev;
+    try {
+      Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+      if (!Ev || typeof global.dispatchEvent !== "function") {
+        return;
+      }
+      global.dispatchEvent(new Ev("cwa:export-status", {
+        bubbles: true,
+        detail : {
+          action : action,
+          ok     : false,
+          code   : "duplicate",
+          message: "Export already in progress",
+        },
+      }));
+    } catch (_err) {
+      /* status is best-effort */
     }
-    global.dispatchEvent(new Ev("cwa:export-status", {
-      bubbles: true,
-      detail : {
-        action : action,
-        ok     : false,
-        code   : "duplicate",
-        message: "Export already in progress",
-      },
-    }));
   }
 
   function boot() {
     if (global.__cwaExportBooted) {
       return;
     }
-    global.__cwaExportBooted = true;
 
+    var BROWSER_FALLBACK = {
+      native_unavailable : true,
+      invalid_payload    : true,
+      forbidden_field    : true,
+      forbidden_filename : true,
+    };
     var inflight = Object.create(null);
     async function downloadWithCompanion(blob, filename, doc) {
       var bridge;
       var result;
+      var error;
       try {
         bridge = global.CwaNativeBridge;
         if (bridge && typeof bridge.saveFile === "function") {
@@ -67,13 +78,17 @@
           if (result && result.ok) {
             return true;
           }
+          error = result && result.error;
+          if (error && !BROWSER_FALLBACK[error]) {
+            return false;
+          }
         }
-      } catch (err) {
-        // Native companion failures must fall back to the browser download.
+      } catch (_err) {
+        return false;
       }
       try {
         return await core.triggerDownload(blob, filename, doc);
-      } catch (err) {
+      } catch (_err) {
         return false;
       }
     }
@@ -141,6 +156,7 @@
     global.addEventListener("cwa:copy", onCopy);
     global.addEventListener("cwa:save-md", onSaveMd);
     global.addEventListener("cwa:save-zip", onSaveZip);
+    global.__cwaExportBooted = true;
   }
 
   boot();

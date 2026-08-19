@@ -471,6 +471,7 @@ describe("collectVisibleThread", () => {
     expect(markdown).not.toContain("HIDDEN_TH");
     expect(markdown).not.toContain("HIDDEN_TD");
     expect(cards.map((card) => card.alt)).toEqual(["report.csv"]);
+    expect((markdown.match(/\[Python\]\(/g) || []).length).toBe(1);
   });
 
   it("walks the whole message when no data-message-content root exists", () => {
@@ -746,5 +747,206 @@ describe("collectVisibleThread", () => {
       { url: "/files/mounted.csv", alt: "mounted.csv", kind: "file-card" },
     ]);
     expect(bounds).not.toHaveBeenCalled();
+  });
+});
+
+describe("visible-thread leftover honesty", () => {
+  it("omits closed details, aria-hidden, inert, and unselected option text", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <p>VISIBLE_TEXT</p>
+          <details>
+            <summary>Thought</summary>
+            <div data-testid="reasoning">CLOSED_DETAILS_REASONING</div>
+          </details>
+          <p aria-hidden="true">ARIA_HIDDEN_SECRET</p>
+          <p inert>INERT_SECRET</p>
+          <select>
+            <option>UNSELECTED_OPTION</option>
+            <option selected>keep-option</option>
+          </select>
+          <p style="position:absolute;width:1px;clip-path:inset(50%)">CLIP_SECRET</p>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+    const markdown = core.serializeThreadToMarkdown(thread, { frontmatter: false });
+
+    expect(serialized).toContain("VISIBLE_TEXT");
+    expect(serialized).not.toContain("CLOSED_DETAILS_REASONING");
+    expect(serialized).not.toContain("ARIA_HIDDEN_SECRET");
+    expect(serialized).not.toContain("INERT_SECRET");
+    expect(serialized).not.toContain("UNSELECTED_OPTION");
+    expect(serialized).not.toContain("CLIP_SECRET");
+    expect(markdown).toContain("Thought");
+    expect(markdown).not.toContain("CLOSED_DETAILS_REASONING");
+  });
+
+  it("prefers the last visible thread-bearing main", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    const stale = document.createElement("main");
+    const current = document.createElement("main");
+    stale.innerHTML = '<div data-message-author-role="assistant"><p>STALE_VISIBLE</p></div>';
+    current.innerHTML = '<div data-message-author-role="user"><p>CURRENT</p></div>';
+    wrap.appendChild(stale);
+    wrap.appendChild(current);
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("CURRENT");
+    expect(serialized).not.toContain("STALE_VISIBLE");
+  });
+
+  it("uses the first visible data-message-content root", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <div data-message-content hidden><p>OLD_VARIANT</p></div>
+          <div data-message-content><p>NEW_VARIANT</p></div>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("NEW_VARIANT");
+    expect(serialized).not.toContain("OLD_VARIANT");
+  });
+
+  it("does not duplicate nested conversation-turn articles", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <article data-testid="conversation-turn-1">
+          <p>NESTED</p>
+          <article data-testid="conversation-turn-1-inner">
+            <p>NESTED</p>
+          </article>
+        </article>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    expect(thread.messages).toHaveLength(1);
+    expect(JSON.stringify(thread.messages).split("NESTED").length - 1).toBe(2);
+  });
+
+  it("renders nested lists with indentation", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <ul>
+            <li>outer
+              <ul>
+                <li>inner-a</li>
+                <li>inner-b</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const list = thread.messages[0].blocks.find((block) => block.type === "list");
+    expect(list && list.markdown).toBe("- outer\n  - inner-a\n  - inner-b");
+  });
+
+  it("inserts newlines between block children and CodeMirror lines", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <div data-testid="reasoning"><p>First I consider the request.</p><p>Then I answer it.</p></div>
+          <div class="cm-editor"><div class="cm-content"><div class="cm-line">def a():</div><div class="cm-line">return 1</div></div></div>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const thinking = thread.messages[0].blocks.find((block) => block.type === "thinking");
+    const code = thread.messages[0].blocks.find((block) => block.type === "code");
+    expect(thinking && thinking.text).toBe("First I consider the request.\nThen I answer it.");
+    expect(code && code.text).toBe("def a():\nreturn 1");
+  });
+
+  it("does not flag page chrome as export gaps when no conversation main exists", () => {
+    document.body.replaceChildren();
+    document.body.insertAdjacentHTML(
+      "afterbegin",
+      `<button data-testid="scroll-to-previous">Earlier messages</button>
+       <button>Canvas</button>
+       <span>Deep research</span>
+       <a download href="/files/outside.csv">outside</a>`
+    );
+
+    const signals = core.inspectExportSignals(document.body);
+    expect(signals.unloadedMessages).toBe(false);
+    expect(signals.closedCanvases).toBe(false);
+    expect(signals.deepResearchPanels).toBe(false);
+    expect(signals.codeInterpreterFiles).toBe(false);
+    expect(signals.hiddenThinking).toBe(false);
+  });
+
+  it("collapses encoded traversal into forbidden media paths", () => {
+    expect(core.isForbiddenMediaPath("/backend-api")).toBe(true);
+    expect(core.isForbiddenMediaPath("/api/auth")).toBe(true);
+    expect(
+      core.mediaUrlDecision(
+        "https://chatgpt.com/files/..%2fbackend-api/conversation",
+        "https://chatgpt.com"
+      )
+    ).toMatchObject({
+      allowed: false,
+      reason : "forbidden_endpoint",
+    });
+  });
+
+  it("emits a manifest object that includes every schema-required key", () => {
+    const manifest = core.buildManifestObject({
+      title     : "Widget export",
+      url       : "https://chatgpt.com/c/11111111-2222-4333-8444-555555555555",
+      exportedAt: FIXED_ISO,
+      included  : { mediaCount: 0 },
+      gaps      : core.detectExportGaps({}),
+    });
+    for (const key of MANIFEST_SCHEMA.required) {
+      expect(manifest).toHaveProperty(key);
+    }
+    expect(Object.keys(manifest).sort()).toEqual([...MANIFEST_SCHEMA.required, "officialExport"].sort());
+    expect(manifest.files).toEqual(["chat.md", "MANIFEST.md", "manifest.json"]);
+    expect(manifest.media).toEqual({
+      included: 0,
+      failed  : [],
+      skipped : [],
+      workflow: "visible-dom",
+    });
   });
 });

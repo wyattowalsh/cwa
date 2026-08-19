@@ -292,4 +292,47 @@ describe("CwaNativeBridge", () => {
       error: "native_error",
     });
   });
+
+  it("rejects control characters and trailing-dot conversation.json as unsafe names", () => {
+    const blob = new Blob(["md"]);
+    expect(bridge.assertSafePayload({ filename: "chat\u0000.md", blob })).toEqual({
+      ok   : false,
+      error: "invalid_payload",
+    });
+    expect(bridge.assertSafePayload({ filename: "conversation.json.", blob })).toEqual({
+      ok   : false,
+      error: "forbidden_filename",
+    });
+    expect(bridge.assertSafePayload("chat.md")).toEqual({
+      ok   : false,
+      error: "invalid_payload",
+    });
+  });
+
+  it("calls the saveFile function captured at detect time", async () => {
+    let reads = 0;
+    const first = vi.fn(async () => ({ ok: true }));
+    const second = vi.fn(async () => ({ ok: true }));
+    const host = {};
+    Object.defineProperty(host, "saveFile", {
+      configurable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? first : second;
+      },
+    });
+
+    await expect(
+      bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, { __cwaNative: host })
+    ).resolves.toMatchObject({ ok: true, via: "native" });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("maps unknown host error strings to native_error", async () => {
+    const host = { saveFile: vi.fn(async () => ({ ok: false, error: "host_panic" })) };
+    await expect(
+      bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, { __cwaNative: host })
+    ).resolves.toMatchObject({ ok: false, error: "native_error" });
+  });
 });
