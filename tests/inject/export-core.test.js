@@ -229,13 +229,21 @@ describe("url and filename helpers", () => {
     ).toMatchObject({ allowed: true });
     expect(
       core.mediaUrlDecision("https://chatgpt.com:444/image.png", "https://chatgpt.com")
-    ).toEqual({ allowed: false, reason: "disallowed_host" });
+    ).toEqual({
+      allowed: false,
+      reason : "disallowed_host",
+      href   : "https://chatgpt.com:444/image.png",
+    });
     expect(
       core.mediaUrlDecision(
         "https://chatgpt.com/%2Fbackend-api%2Fconversation",
         "https://chatgpt.com"
       )
-    ).toEqual({ allowed: false, reason: "forbidden_endpoint" });
+    ).toEqual({
+      allowed: false,
+      reason : "forbidden_endpoint",
+      href   : "https://chatgpt.com/%2Fbackend-api%2Fconversation",
+    });
     expect(core.mediaUrlDecision("ftp://chatgpt.com/file", "https://chatgpt.com")).toEqual({
       allowed: false,
       reason : "unsupported_scheme",
@@ -363,6 +371,62 @@ describe("collectVisibleThread", () => {
 
     expect(thread.messages).toEqual([]);
     expect(core.serializeThreadToMarkdown(thread)).not.toContain("OFF_THREAD_SECRET");
+  });
+
+  it("omits CSS-hidden descendant text, thinking, and citations inside a visible message", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <p>VISIBLE_TEXT</p>
+          <p style="display: none">HIDDEN_BLOCK_SECRET</p>
+          <p>keep <span hidden>HIDDEN_INLINE_SECRET</span> going</p>
+          <div data-testid="reasoning" style="display: none">HIDDEN_THINKING_SECRET</div>
+          <a href="https://docs.python.org/3/" data-testid="citation" hidden>HIDDEN_CITE_SECRET</a>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+    const markdown = core.serializeThreadToMarkdown(thread, { frontmatter: false });
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("VISIBLE_TEXT");
+    expect(serialized).not.toContain("HIDDEN_BLOCK_SECRET");
+    expect(serialized).not.toContain("HIDDEN_INLINE_SECRET");
+    expect(serialized).not.toContain("HIDDEN_THINKING_SECRET");
+    expect(serialized).not.toContain("HIDDEN_CITE_SECRET");
+    expect(markdown).toContain("VISIBLE_TEXT");
+    expect(markdown).not.toContain("HIDDEN_BLOCK_SECRET");
+    expect(markdown).not.toContain("HIDDEN_INLINE_SECRET");
+    expect(markdown).not.toContain("HIDDEN_THINKING_SECRET");
+    expect(markdown).not.toContain("HIDDEN_CITE_SECRET");
+  });
+
+  it("skips system and tool roles", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="system"><p>SYSTEM_SECRET</p></div>
+        <div data-message-author-role="tool"><p>TOOL_SECRET</p></div>
+        <div data-message-author-role="user"><p>VISIBLE_USER</p></div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages.map((message) => message.role)).toEqual(["user"]);
+    expect(serialized).toContain("VISIBLE_USER");
+    expect(serialized).not.toContain("SYSTEM_SECRET");
+    expect(serialized).not.toContain("TOOL_SECRET");
   });
 
   it("flags known DOM gaps from the fixture without conversation JSON counts", () => {

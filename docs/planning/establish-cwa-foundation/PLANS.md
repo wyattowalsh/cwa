@@ -309,3 +309,50 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 3 (auditor leftovers)
+
+Per-wave auditors on `e9dcb7e` confirmed round 2’s known list and found leftover runtime gaps. Exclusive-file fixes on `main`. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| CSS-hidden descendant text/thinking/citations omitted | `inject/export-core.js` | **PASS** |
+| System/tool roles skipped | `inject/export-core.js` | **PASS** |
+| Canonical media aliases rewritten after one fetch | `inject/export-core.js` | **PASS** |
+| Denied media aliases deduped via normalized `href` | `inject/export-core.js` | **PASS** |
+| Never-settling native `saveFile` times out | `inject/native-bridge.js` | **PASS** |
+| Export command rejections emit failure status | `inject/export.js` | **PASS** |
+| Minimap ignores off-main messages | `inject/chrome.js` | **PASS** |
+| Previous sidebar handle/styles torn down on candidate change | `inject/chrome.js` | **PASS** |
+| Diagnostics href kinds anchored at pathname start | `inject/diagnostics.js` | **PASS** |
+| Diagnostics emit required; throw → `diagnostics_unavailable` | `inject/tools.js` | **PASS** |
+
+Deferred (validator hygiene, not runtime leaks): `--strict` PASS wording when jsonschema is absent; schema `additionalProperties` on nested objects; Windows-separator `conversation.json` variants.
+
+### Wave-assurance round 3 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 134 tests passed
+  node --test inject/chrome.test.js: 13 passed
+  `__CWA_CHROME_BOOTED__` remains undefined when chrome.js is required in Node
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  PASS: planning overlay (strict)
+
+diff -u pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```

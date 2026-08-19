@@ -166,4 +166,28 @@ describe("export page-world boot", () => {
       runtime.window.close();
     }
   });
+
+  it("emits a failure status when an export command rejects", async () => {
+    const runtime = bootExport();
+    const statuses = [];
+
+    try {
+      runtime.window.addEventListener("cwa:export-status", (event) => {
+        statuses.push(event.detail);
+      });
+      runtime.scriptWindow.CwaExport.saveMarkdown = () => Promise.reject(new Error("boom"));
+      const detail = {};
+      runtime.window.dispatchEvent(new runtime.window.CustomEvent("cwa:save-md", { detail }));
+      expect(detail.handled).toBe(true);
+      await vi.waitFor(() => {
+        expect(statuses).toContainEqual(expect.objectContaining({
+          action: "save-md",
+          ok    : false,
+          code  : "error",
+        }));
+      });
+    } finally {
+      runtime.window.close();
+    }
+  });
 });

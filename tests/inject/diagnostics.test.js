@@ -70,6 +70,11 @@ describe("CwaDiagnostics", () => {
 
   it("classifies hrefs from pathname only", () => {
     expect(diagnostics.classifyHref("https://chatgpt.com/?next=/c/fake")).toBe("other");
+    expect(diagnostics.classifyHref("https://chatgpt.com/foo/c/bar")).toBe("other");
+    expect(diagnostics.classifyHref("https://chatgpt.com/settings-old")).toBe("other");
+    expect(diagnostics.classifyHref("https://chatgpt.com/c/11111111-2222-4333-8444-555555555555")).toBe("conversation");
+    expect(diagnostics.classifyHref("https://chatgpt.com/settings")).toBe("settings");
+    expect(diagnostics.classifyHref("https://chatgpt.com/settings/account")).toBe("settings");
     expect(diagnostics.classifyHref("")).toBe("other");
   });
 });

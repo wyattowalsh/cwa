@@ -572,6 +572,9 @@
       if (child.nodeType === TEXT_NODE) {
         out += child.nodeValue || "";
       } else if (child.nodeType === ELEMENT_NODE) {
+        if (hasCssHiddenAncestor(child)) {
+          continue;
+        }
         tag = child.tagName;
         if (tag === "BR") {
           out += "\n";
@@ -610,6 +613,9 @@
       }
     }
     for (i = 0; i < items.length; i += 1) {
+      if (hasCssHiddenAncestor(items[i])) {
+        continue;
+      }
       prefix = ordered ? String(i + 1) + ". " : "- ";
       lines.push(prefix + inlineMarkdown(items[i]).trim());
     }
@@ -624,6 +630,9 @@
     var cells;
     var cols;
     for (i = 0; i < trs.length; i += 1) {
+      if (hasCssHiddenAncestor(trs[i])) {
+        continue;
+      }
       cells = trs[i].querySelectorAll("th, td");
       cols  = [];
       for (j = 0; j < cells.length; j += 1) {
@@ -660,7 +669,7 @@
     if (!el || el.nodeType !== ELEMENT_NODE) {
       return;
     }
-    if (isIgnoredChrome(el)) {
+    if (hasCssHiddenAncestor(el) || isIgnoredChrome(el)) {
       return;
     }
     tag = el.tagName;
@@ -766,6 +775,9 @@
     var href;
     for (i = 0; i < nodes.length; i += 1) {
       el   = nodes[i];
+      if (hasCssHiddenAncestor(el)) {
+        continue;
+      }
       href = el.getAttribute("href") || "";
       if (el.tagName === "A" || href) {
         out.push({
@@ -782,7 +794,13 @@
     var roleEl  = node.hasAttribute("data-message-author-role")
       ? node
       : node.querySelector("[data-message-author-role]");
-    var role    = (roleEl && roleEl.getAttribute("data-message-author-role")) || "assistant";
+    var role    = String((roleEl && roleEl.getAttribute("data-message-author-role")) || "").toLowerCase();
+    if (role && role !== "user" && role !== "assistant") {
+      return null;
+    }
+    if (!role) {
+      role = "assistant";
+    }
     var id      = node.getAttribute("data-message-id") ||
       (roleEl && roleEl.getAttribute("data-message-id")) ||
       "";
@@ -807,6 +825,9 @@
       extra = [];
       for (i = 0; i < thinkingNodes.length; i += 1) {
         if (content.contains && content.contains(thinkingNodes[i])) {
+          continue;
+        }
+        if (hasCssHiddenAncestor(thinkingNodes[i])) {
           continue;
         }
         extra.push({ type: "thinking", text: cleanText(thinkingNodes[i].textContent) });
@@ -1045,10 +1066,10 @@
       parsed.hostname === "files.oaiusercontent.com" &&
       parsed.port === "";
     if (!sameOrigin && !fixtureCdn) {
-      return { allowed: false, reason: "disallowed_host" };
+      return { allowed: false, reason: "disallowed_host", href: parsed.href };
     }
     if (isForbiddenMediaPath(parsed.pathname)) {
-      return { allowed: false, reason: "forbidden_endpoint" };
+      return { allowed: false, reason: "forbidden_endpoint", href: parsed.href };
     }
     return { allowed: true, href: parsed.href };
   }
@@ -1393,6 +1414,7 @@
     var fileCardSkipped = [];
     var seen  = {};
     var skippedSeen = {};
+    var aliases = {};
     var list  = [];
     var i;
     var item;
@@ -1453,9 +1475,13 @@
       decision = mediaUrlDecision(href, origin);
       key = decision.href || String(href);
       if (seen[key]) {
+        if (decision.allowed && aliases[key] && aliases[key].indexOf(href) === -1) {
+          aliases[key].push(href);
+        }
         return;
       }
       seen[key] = true;
+      aliases[key] = [href];
       if (!decision.allowed) {
         pushSkipped(href, decision.reason);
         return;
@@ -1464,6 +1490,7 @@
         url : href,
         alt : entry.alt,
         kind: entry.kind,
+        key : key,
       });
     }
 
@@ -1649,7 +1676,12 @@
           }
           name = sanitizeMediaFilename(files.length, item.alt || "image", url, content && content.type);
           files.push({ name: name, content: content, url: url });
-          rewrites[url] = "media/" + name;
+          (aliases[item.key] || [url]).forEach(function (rawUrl) {
+            rewrites[rawUrl] = "media/" + name;
+          });
+          if (item.key) {
+            rewrites[item.key] = "media/" + name;
+          }
           fetchedUrls.push(url);
           totalBytes += size;
         } catch (err) {

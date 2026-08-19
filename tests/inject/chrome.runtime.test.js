@@ -313,4 +313,80 @@ describe("chrome runtime isolation", () => {
       runtime.window.close();
     }
   });
+
+  it("ignores off-main messages when building the minimap", () => {
+    const bounds = () => ({
+      top   : 0,
+      left  : 0,
+      width : 500,
+      height: 200,
+      right : 500,
+      bottom: 200,
+    });
+    const runtime = bootChrome({
+      setup(_window, document) {
+        const decoy = document.createElement("div");
+        decoy.setAttribute("data-message-author-role", "assistant");
+        decoy.getBoundingClientRect = bounds;
+        document.body.appendChild(decoy);
+        const main = document.createElement("main");
+        const message = document.createElement("div");
+        message.setAttribute("data-message-author-role", "user");
+        message.getBoundingClientRect = bounds;
+        main.appendChild(message);
+        document.body.appendChild(main);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const strip = runtime.document.getElementById("cwa-minimap");
+      expect(strip).not.toBeNull();
+      expect(strip.getAttribute("data-count")).toBe("1");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("tears down the previous sidebar handle when the candidate changes", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let first;
+    let second;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        first = document.createElement("nav");
+        first.setAttribute("aria-label", "Chat history");
+        first.getBoundingClientRect = () => sidebarRect;
+        second = document.createElement("nav");
+        second.setAttribute("aria-label", "Chat history");
+        second.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(first);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      expect(first.querySelector(".cwa-sidebar-handle")).not.toBeNull();
+
+      first.remove();
+      runtime.document.body.appendChild(second);
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+      runtime.flushFrames();
+
+      expect(first.querySelector(".cwa-sidebar-handle")).toBeNull();
+      expect(second.querySelector(".cwa-sidebar-handle")).not.toBeNull();
+
+      runtime.enterSafeMode();
+      expect(second.querySelector(".cwa-sidebar-handle")).toBeNull();
+    } finally {
+      runtime.window.close();
+    }
+  });
 });

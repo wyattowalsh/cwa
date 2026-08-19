@@ -4,6 +4,7 @@ import bridge from "../../inject/native-bridge.js";
 describe("CwaNativeBridge", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("reports native_unavailable when no host is present", async () => {
@@ -192,5 +193,21 @@ describe("CwaNativeBridge", () => {
     await expect(
       bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, { __cwaNative: host })
     ).resolves.toMatchObject({ ok: false, error: "native_error" });
+  });
+
+  it("times out a never-settling host saveFile as native_error", async () => {
+    vi.useFakeTimers();
+    const host = { saveFile: vi.fn(() => new Promise(() => {})) };
+    const pending = bridge.saveFile(
+      { filename: "cwa.md", blob: new Blob(["md"]) },
+      { __cwaNative: host }
+    );
+
+    await vi.advanceTimersByTimeAsync(8000);
+
+    await expect(pending).resolves.toMatchObject({
+      ok   : false,
+      error: "native_error",
+    });
   });
 });

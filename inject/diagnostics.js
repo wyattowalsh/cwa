@@ -137,10 +137,10 @@
     } catch (err) {
       return "other";
     }
-    if (/\/c\//.test(parsed.pathname)) {
+    if (/^\/c(?:\/|$)/.test(parsed.pathname)) {
       return "conversation";
     }
-    if (/\/settings/.test(parsed.pathname)) {
+    if (/^\/settings(?:\/|$)/.test(parsed.pathname)) {
       return "settings";
     }
     return "other";

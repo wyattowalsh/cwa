@@ -90,6 +90,26 @@
 
     global.CwaExport = exporter;
 
+    function emitFailure(action) {
+      var Ev = global.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+      if (!Ev || typeof global.dispatchEvent !== "function") {
+        return;
+      }
+      try {
+        global.dispatchEvent(new Ev("cwa:export-status", {
+          bubbles: true,
+          detail : {
+            action : action,
+            ok     : false,
+            code   : "error",
+            message: "Export failed",
+          },
+        }));
+      } catch (_err) {
+        /* status is best-effort */
+      }
+    }
+
     function run(action, method) {
       return function (event) {
         if (event && event.detail && typeof event.detail === "object") {
@@ -100,15 +120,17 @@
           return;
         }
         inflight[action] = true;
-        Promise.resolve(method.call(exporter)).finally(function () {
+        Promise.resolve(exporter[method]()).then(function () {}, function () {
+          emitFailure(action);
+        }).finally(function () {
           inflight[action] = false;
         });
       };
     }
 
-    var onCopy    = run("copy", exporter.copy);
-    var onSaveMd  = run("save-md", exporter.saveMarkdown);
-    var onSaveZip = run("save-zip", exporter.saveZip);
+    var onCopy    = run("copy", "copy");
+    var onSaveMd  = run("save-md", "saveMarkdown");
+    var onSaveZip = run("save-zip", "saveZip");
     global.addEventListener("cwa:copy", onCopy);
     global.addEventListener("cwa:save-md", onSaveMd);
     global.addEventListener("cwa:save-zip", onSaveZip);

@@ -9,6 +9,7 @@
   "use strict";
 
   var PROTOCOL = "cwa.native.v1";
+  var SAVE_TIMEOUT_MS = 8000;
 
   function detectHost(root) {
     root = root || global;
@@ -99,6 +100,35 @@
     return { ok: true };
   }
 
+  function awaitHostSave(host, payload, root) {
+    var timeoutMs = SAVE_TIMEOUT_MS;
+    var timerApi = root && typeof root.setTimeout === "function" ? root : global;
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer;
+      function finish(value) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer != null && typeof timerApi.clearTimeout === "function") {
+          timerApi.clearTimeout(timer);
+        }
+        resolve(value);
+      }
+      if (typeof timerApi.setTimeout === "function") {
+        timer = timerApi.setTimeout(function () {
+          finish({ ok: false, error: "native_error", protocol: PROTOCOL });
+        }, timeoutMs);
+      }
+      Promise.resolve(host.saveFile(payload)).then(function (value) {
+        finish(value);
+      }, function () {
+        finish({ ok: false, error: "native_error", protocol: PROTOCOL });
+      });
+    });
+  }
+
   async function saveFile(payload, root) {
     var safe;
     var host;
@@ -114,11 +144,11 @@
       if (!host) {
         return { ok: false, error: "native_unavailable", protocol: PROTOCOL };
       }
-      result = await host.saveFile({
+      result = await awaitHostSave(host, {
         filename: filename,
         blob    : payload.blob,
         mime    : payload.mime || "",
-      });
+      }, root || global);
       if (!result || result.ok !== true) {
         return {
           ok      : false,

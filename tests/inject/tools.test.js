@@ -160,15 +160,37 @@ describe("CwaTools", () => {
 
   it("runs diagnostics without cookies or conversation JSON", () => {
     vi.stubGlobal("CwaDiagnostics", diagnostics);
+    const dispatchEvent = vi.fn();
     const result = tools.run("diagnostics", {
       probe    : { message: { hit: true, count: 1 } },
       lifecycle: { getState: () => "ready" },
       safeMode : { active: false },
       href     : "https://chatgpt.com/settings",
-      window   : { CustomEvent, dispatchEvent: vi.fn() },
+      window   : { CustomEvent, dispatchEvent },
     });
     expect(result.ok).toBe(true);
     expect(result.diagnostics.hrefKind).toBe("settings");
     expect(JSON.stringify(result)).not.toContain("conversation.json");
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchEvent.mock.calls[0][0].type).toBe("cwa:diagnostics");
+  });
+
+  it("reports diagnostics_unavailable when emit is missing or throws", () => {
+    const snap = { schema: "cwa.diagnostics.v1" };
+    vi.stubGlobal("CwaDiagnostics", { snapshot: () => snap });
+    expect(tools.run("diagnostics")).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
+
+    const emit = vi.fn(() => {
+      throw new Error("emit failed");
+    });
+    vi.stubGlobal("CwaDiagnostics", { snapshot: () => snap, emit });
+    expect(tools.run("diagnostics")).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
+    expect(emit).toHaveBeenCalledTimes(1);
   });
 });

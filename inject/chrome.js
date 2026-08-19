@@ -560,11 +560,36 @@
     node.appendChild(handleEl);
   }
 
+  function clearSidebarStyles(node) {
+    if (!node || !node.style || typeof node.style.removeProperty !== "function") {
+      return;
+    }
+    node.style.removeProperty("width");
+    node.style.removeProperty("min-width");
+    node.style.removeProperty("max-width");
+    node.style.removeProperty("flex-basis");
+    node.style.removeProperty("flex-shrink");
+    node.style.removeProperty("--sidebar-width");
+  }
+
+  function unmountHandle() {
+    if (handleEl && handleEl.parentNode) {
+      handleEl.parentNode.removeChild(handleEl);
+    }
+    handleEl = null;
+  }
+
+  function releaseSidebar(node) {
+    unmountHandle();
+    clearSidebarStyles(node);
+  }
+
   function syncSidebar() {
     if (isSafe()) return;
     var node = findSidebar();
     if (!node) return;
     if (sidebarEl !== node) {
+      if (sidebarEl) releaseSidebar(sidebarEl);
       sidebarEl = node;
       ensureSidebarLandmark(node);
       mountHandle(node);
@@ -597,32 +622,54 @@
   function offsetTopRelative(node, ancestor) {
     var y = 0;
     var elNode = node;
+    var reached = Boolean(!ancestor || node === ancestor);
     while (elNode && elNode !== ancestor) {
       y += elNode.offsetTop || 0;
       elNode = elNode.offsetParent;
-      if (elNode && ancestor.contains && !ancestor.contains(elNode) && ancestor !== elNode) {
+      if (elNode && ancestor && ancestor.contains && !ancestor.contains(elNode) && ancestor !== elNode) {
         break;
       }
     }
-    if (y === 0) {
+    if (elNode === ancestor) {
+      reached = true;
+    }
+    if (!reached || y === 0) {
       var nr = node.getBoundingClientRect();
-      var ar = ancestor.getBoundingClientRect ? ancestor.getBoundingClientRect() : { top: 0 };
-      y = nr.top - ar.top + (ancestor.scrollTop || 0);
+      var ar = ancestor && ancestor.getBoundingClientRect ? ancestor.getBoundingClientRect() : { top: 0 };
+      y = nr.top - ar.top + ((ancestor && ancestor.scrollTop) || 0);
     }
     return y;
+  }
+
+  function isThreadMessage(node) {
+    var pane;
+    if (!node) {
+      return false;
+    }
+    pane = qs("main");
+    if (pane && !pane.contains(node)) {
+      return false;
+    }
+    if (node.closest && node.closest(
+      "nav, [data-cwa-chrome], .cwa-toolbar, .cwa-palette, .cwa-minimap, .cwa-export-status"
+    )) {
+      return false;
+    }
+    return true;
   }
 
   function collectMessages() {
     var selectors = global.CwaSelectors;
     var resolved;
+    var nodes;
     if (selectors && typeof selectors.resolve === "function") {
       resolved = selectors.resolve(document, "message");
-      return ((resolved && resolved.nodes) || []).filter(function (node) {
-        return node.getBoundingClientRect().height > 0;
-      });
+      nodes = (resolved && resolved.nodes) || [];
+    } else {
+      nodes = qsa(messageSelector(), qs("main") || document);
     }
-    return qsa(messageSelector()).filter(function (node) {
-      return node.getBoundingClientRect().height > 0;
+    return nodes.filter(function (node) {
+      return isThreadMessage(node) && node.getBoundingClientRect().height > 0;
     });
   }
 
@@ -1256,15 +1303,15 @@
               scheduler.cancel("sidebar-resize");
             }
             unmountMinimap();
+            if (sidebarEl) {
+              releaseSidebar(sidebarEl);
+              sidebarEl = null;
+            }
             if (rafSidebar) {
               cancelAnimationFrame(rafSidebar);
               rafSidebar = 0;
             }
             dragging = false;
-            if (handleEl) {
-              handleEl.setAttribute("hidden", "");
-              handleEl.disabled = true;
-            }
             emitStatusSafe(snap);
           }
         },

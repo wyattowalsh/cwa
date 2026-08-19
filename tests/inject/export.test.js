@@ -263,6 +263,30 @@ describe("createExporter", () => {
     );
     expect(result.mediaCount).toBe(1);
     expect(result.files.filter((path) => path.startsWith("media/"))).toHaveLength(1);
+    expect(result.markdown).toContain("media/");
+    expect(result.markdown).not.toContain("https://chatgpt.com/files/abc");
+    expect(result.markdown).not.toContain('src="/files/abc"');
+  });
+
+  it("rewrites every canonical alias in markdown after a single fetch", async () => {
+    mountFixture(
+      `<main>
+        <div data-message-author-role="assistant">
+          <p><img src="https://chatgpt.com/files/abc" alt="abs"></p>
+          <p><img src="/files/abc" alt="rel"></p>
+        </div>
+      </main>`
+    );
+
+    const result = await makeExporter().saveZip();
+    const mediaPath = result.files.find((path) => path.startsWith("media/"));
+
+    expect(result.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(mediaPath).toBeTruthy();
+    expect(result.markdown).toContain(`](${mediaPath})`);
+    expect(result.markdown).not.toContain("https://chatgpt.com/files/abc");
+    expect(result.markdown).not.toContain("/files/abc");
   });
 
   it("records one skipped media item for the same denied image and file card", async () => {
