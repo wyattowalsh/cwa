@@ -522,9 +522,9 @@
       }
     }
     if (cm) {
-      text = cm.textContent;
+      text = visibleText(cm);
     } else {
-      text = (codeEl || el).textContent;
+      text = visibleText(codeEl || el);
     }
     return {
       type    : "code",
@@ -579,7 +579,7 @@
         if (tag === "BR") {
           out += "\n";
         } else if (tag === "CODE" && child.parentElement && child.parentElement.tagName !== "PRE") {
-          out += "`" + String(child.textContent || "").replace(/`/g, "\\`") + "`";
+          out += "`" + String(visibleText(child) || "").replace(/`/g, "\\`") + "`";
         } else if (tag === "STRONG" || tag === "B") {
           out += "**" + inlineMarkdown(child) + "**";
         } else if (tag === "EM" || tag === "I") {
@@ -636,6 +636,10 @@
       cells = trs[i].querySelectorAll("th, td");
       cols  = [];
       for (j = 0; j < cells.length; j += 1) {
+        if (hasCssHiddenAncestor(cells[j])) {
+          cols.push("");
+          continue;
+        }
         cols.push(inlineMarkdown(cells[j]).trim().replace(/\|/g, "\\|"));
       }
       if (cols.length) {
@@ -677,7 +681,7 @@
       return;
     }
     if (isThinking(el)) {
-      blocks.push({ type: "thinking", text: cleanText(el.textContent) });
+      blocks.push({ type: "thinking", text: cleanText(visibleText(el)) });
       return;
     }
     if (isCodeBlock(el)) {
@@ -722,7 +726,7 @@
     if (tag === "A" && isCitationAnchor(el, el.getAttribute("href") || "")) {
       blocks.push({
         type : "citation",
-        title: cleanText(el.textContent) || "source",
+        title: cleanText(visibleText(el)) || "source",
         url  : el.getAttribute("href") || "",
       });
       return;
@@ -744,8 +748,8 @@
     children = el.children;
     if (!children || children.length === 0) {
       text = el.classList && el.classList.contains("whitespace-pre-wrap")
-        ? String(el.textContent || "").replace(/^\n+|\n+$/g, "")
-        : cleanText(el.textContent);
+        ? String(visibleText(el) || "").replace(/^\n+|\n+$/g, "")
+        : cleanText(visibleText(el));
       if (text) {
         blocks.push({ type: "paragraph", text: text });
       }
@@ -782,7 +786,7 @@
       if (el.tagName === "A" || href) {
         out.push({
           type : "citation",
-          title: cleanText(el.textContent) || "source",
+          title: cleanText(visibleText(el)) || "source",
           url  : href,
         });
       }
@@ -804,9 +808,7 @@
     var id      = node.getAttribute("data-message-id") ||
       (roleEl && roleEl.getAttribute("data-message-id")) ||
       "";
-    var content = node.querySelector("[data-message-content]") ||
-      node.querySelector(".markdown, .prose, .whitespace-pre-wrap") ||
-      node;
+    var content = node.querySelector("[data-message-content]") || node;
     var blocks  = blocksFromContentRoot(content);
     var thinkingNodes = node.querySelectorAll(
       '[data-testid="reasoning"], [data-testid="thinking"], [data-cwa="thinking"]'
@@ -830,7 +832,7 @@
         if (hasCssHiddenAncestor(thinkingNodes[i])) {
           continue;
         }
-        extra.push({ type: "thinking", text: cleanText(thinkingNodes[i].textContent) });
+        extra.push({ type: "thinking", text: cleanText(visibleText(thinkingNodes[i])) });
       }
       if (extra.length) {
         blocks = extra.concat(blocks);
@@ -874,6 +876,13 @@
     }
     for (i = 0; i < nodes.length; i += 1) {
       if (hasCssHiddenAncestor(nodes[i])) {
+        continue;
+      }
+      if (
+        nodes[i].parentElement &&
+        typeof nodes[i].parentElement.closest === "function" &&
+        nodes[i].parentElement.closest("[data-message-author-role]")
+      ) {
         continue;
       }
       if (nodes[i].closest && nodes[i].closest(
@@ -973,7 +982,7 @@
       thinking = msg.querySelector(
         '[data-testid="reasoning"], [data-testid="thinking"], [data-cwa="thinking"]'
       );
-      if (btn && (!thinking || !cleanText(thinking.textContent))) {
+      if (btn && (!thinking || !cleanText(visibleText(thinking)))) {
         return true;
       }
     }
@@ -988,19 +997,30 @@
     );
   }
 
+  function inspectScope(root) {
+    if (!root || !root.querySelector) {
+      return root;
+    }
+    if (String(root.tagName || "").toUpperCase() === "MAIN") {
+      return root;
+    }
+    return root.querySelector("main") || root;
+  }
+
   function inspectExportSignals(root, extras) {
     extras = extras || {};
+    var scope = inspectScope(root);
     var unloaded = false;
-    if (root && root.querySelector &&
-        root.querySelector('[data-testid="scroll-to-previous"], [data-testid="conversation-scroll-up"]')) {
+    if (scope && scope.querySelector &&
+        scope.querySelector('[data-testid="scroll-to-previous"], [data-testid="conversation-scroll-up"]')) {
       unloaded = true;
     }
     return {
       unloadedMessages     : Boolean(unloaded),
-      closedCanvases       : root ? hasClosedCanvas(root) : false,
-      deepResearchPanels   : root ? hasDeepResearchGap(root) : false,
-      codeInterpreterFiles : root ? hasUnfetchedFiles(root) : false,
-      hiddenThinking       : root ? hasHiddenThinking(root) : false,
+      closedCanvases       : scope ? hasClosedCanvas(scope) : false,
+      deepResearchPanels   : scope ? hasDeepResearchGap(scope) : false,
+      codeInterpreterFiles : scope ? hasUnfetchedFiles(scope) : false,
+      hiddenThinking       : scope ? hasHiddenThinking(scope) : false,
       mediaFetchFailed     : (extras.failedMedia || 0) > 0,
       mediaSkipped         : (extras.skippedMedia || 0) > 0,
     };
@@ -1136,6 +1156,38 @@
     return false;
   }
 
+  function visibleText(el) {
+    var out = "";
+    var nodes;
+    var i;
+    var child;
+    if (!el) {
+      return "";
+    }
+    if (el.nodeType === TEXT_NODE) {
+      return el.nodeValue || "";
+    }
+    if (el.nodeType !== ELEMENT_NODE) {
+      return "";
+    }
+    if (hasCssHiddenAncestor(el)) {
+      return "";
+    }
+    if (el.tagName === "BR") {
+      return "\n";
+    }
+    nodes = el.childNodes || [];
+    for (i = 0; i < nodes.length; i += 1) {
+      child = nodes[i];
+      if (child.nodeType === TEXT_NODE) {
+        out += child.nodeValue || "";
+      } else if (child.nodeType === ELEMENT_NODE) {
+        out += visibleText(child);
+      }
+    }
+    return out;
+  }
+
   function collectVisibleFileCards(root, origin, forbiddenItems) {
     var out = [];
     var scope;
@@ -1185,7 +1237,7 @@
         }
         continue;
       }
-      name = el.getAttribute("download") || cleanText(el.textContent) || "file";
+      name = el.getAttribute("download") || cleanText(visibleText(el)) || "file";
       out.push({ url: href, alt: name, kind: "file-card" });
     }
     return out;

@@ -21,13 +21,14 @@
   }
 
   function ping(root) {
-    var host = detectHost(root);
+    var host;
     var pong;
-    if (!host) {
-      return { ok: false, error: "native_unavailable", protocol: PROTOCOL };
-    }
-    if (typeof host.ping === "function") {
-      try {
+    try {
+      host = detectHost(root);
+      if (!host) {
+        return { ok: false, error: "native_unavailable", protocol: PROTOCOL };
+      }
+      if (typeof host.ping === "function") {
         pong = host.ping();
         if (pong && typeof pong.then === "function") {
           if (typeof pong.catch === "function") {
@@ -36,11 +37,11 @@
           return { ok: false, error: "native_error", protocol: PROTOCOL };
         }
         return { ok: true, protocol: PROTOCOL, pong: pong };
-      } catch (err) {
-        return { ok: false, error: "native_error", protocol: PROTOCOL };
       }
+      return { ok: true, protocol: PROTOCOL };
+    } catch (_err) {
+      return { ok: false, error: "native_error", protocol: PROTOCOL };
     }
-    return { ok: true, protocol: PROTOCOL };
   }
 
   function sanitizeFilename(value) {
@@ -63,27 +64,48 @@
     return filename;
   }
 
+  function payloadOwnKeys(payload) {
+    if (typeof Reflect === "object" && typeof Reflect.ownKeys === "function") {
+      return Reflect.ownKeys(payload);
+    }
+    return Object.keys(payload);
+  }
+
   function assertSafePayload(payload) {
     var keys;
     var key;
+    var i;
     var filename;
     var blob;
+    var mime;
+    var hasFilename = false;
+    var hasBlob     = false;
+    var hasMime     = false;
     payload = payload || {};
-    keys = Object.keys(payload);
-    for (key = 0; key < keys.length; key += 1) {
-      if (keys[key] !== "filename" && keys[key] !== "blob" && keys[key] !== "mime") {
+    keys = payloadOwnKeys(payload);
+    for (i = 0; i < keys.length; i += 1) {
+      key = keys[i];
+      if (key !== "filename" && key !== "blob" && key !== "mime") {
         return { ok: false, error: "forbidden_field" };
       }
+      if (key === "filename") {
+        hasFilename = true;
+      } else if (key === "blob") {
+        hasBlob = true;
+      } else if (key === "mime") {
+        hasMime = true;
+      }
     }
-    if (keys.indexOf("filename") === -1 || keys.indexOf("blob") === -1) {
+    if (!hasFilename || !hasBlob) {
       return { ok: false, error: "invalid_payload" };
     }
     filename = sanitizeFilename(payload.filename);
-    blob = payload.blob;
+    blob     = payload.blob;
+    mime     = hasMime ? payload.mime : "";
     if (
       !filename ||
       !blob ||
-      (keys.indexOf("mime") !== -1 && typeof payload.mime !== "string")
+      (hasMime && typeof mime !== "string")
     ) {
       return { ok: false, error: "invalid_payload" };
     }
@@ -97,7 +119,12 @@
     if (filename.toLowerCase() === "conversation.json") {
       return { ok: false, error: "forbidden_filename" };
     }
-    return { ok: true };
+    return {
+      ok      : true,
+      filename: filename,
+      blob    : blob,
+      mime    : mime,
+    };
   }
 
   function awaitHostSave(host, payload, root) {
@@ -144,21 +171,19 @@
     var safe;
     var host;
     var result;
-    var filename;
     try {
       safe = assertSafePayload(payload);
       if (!safe.ok) {
         return safe;
       }
-      filename = sanitizeFilename(payload.filename);
       host = detectHost(root);
       if (!host) {
         return { ok: false, error: "native_unavailable", protocol: PROTOCOL };
       }
       result = await awaitHostSave(host, {
-        filename: filename,
-        blob    : payload.blob,
-        mime    : payload.mime || "",
+        filename: safe.filename,
+        blob    : safe.blob,
+        mime    : safe.mime || "",
       }, root || global);
       if (!result || result.ok !== true) {
         return {

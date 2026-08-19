@@ -56,6 +56,12 @@
     return null;
   }
 
+  function canDispatch(root) {
+    root = root || global;
+    var Ev = root.CustomEvent || (typeof CustomEvent === "function" ? CustomEvent : null);
+    return Boolean(Ev && typeof root.dispatchEvent === "function");
+  }
+
   function emit(name, root) {
     var detail = { source: "tools" };
     root = root || global;
@@ -100,13 +106,21 @@
       } catch (_error) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
-      if (snap == null) {
+      if (
+        snap == null ||
+        typeof snap !== "object" ||
+        Array.isArray(snap) ||
+        snap.schema !== "cwa.diagnostics.v1"
+      ) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
-      if (typeof snap === "object" && snap.error) {
+      if (snap.error) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
       if (!diag || typeof diag.emit !== "function") {
+        return { ok: false, error: "diagnostics_unavailable" };
+      }
+      if (!canDispatch(context.window || global)) {
         return { ok: false, error: "diagnostics_unavailable" };
       }
       try {

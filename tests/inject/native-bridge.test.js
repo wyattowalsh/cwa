@@ -159,7 +159,12 @@ describe("CwaNativeBridge", () => {
       },
     };
 
-    expect(bridge.assertSafePayload({ filename: "cwa.md", blob })).toEqual({ ok: true });
+    expect(bridge.assertSafePayload({ filename: "cwa.md", blob })).toMatchObject({
+      ok      : true,
+      filename: "cwa.md",
+      blob,
+      mime    : "",
+    });
     expect(bridge.assertSafePayload({ filename: "cwa.md", blob: { size: 1 } })).toEqual({
       ok   : false,
       error: "invalid_payload",
@@ -231,5 +236,60 @@ describe("CwaNativeBridge", () => {
     ).resolves.toMatchObject({ ok: true, via: "native" });
     expect(root.clearTimeout).toHaveBeenCalledTimes(1);
     expect(root.clearTimeout).toHaveBeenCalledWith(23);
+  });
+
+  it("rejects enumerable symbol extra keys as forbidden_field", () => {
+    const blob = new Blob(["md"]);
+    const payload = { filename: "cwa.md", blob };
+    payload[Symbol("secret")] = "x";
+
+    expect(bridge.assertSafePayload(payload)).toEqual({
+      ok   : false,
+      error: "forbidden_field",
+    });
+  });
+
+  it("forwards a snapshot so later payload accessors cannot change the host args", async () => {
+    const blob = new Blob(["md"]);
+    let filenameReads = 0;
+    const payload = {};
+    Object.defineProperty(payload, "filename", {
+      enumerable: true,
+      get() {
+        filenameReads += 1;
+        return filenameReads === 1 ? "cwa.md" : "conversation.json";
+      },
+    });
+    Object.defineProperty(payload, "blob", {
+      enumerable: true,
+      get() {
+        return blob;
+      },
+    });
+    const host = {
+      saveFile: vi.fn(async (sent) => {
+        expect(sent).toEqual({ filename: "cwa.md", blob, mime: "" });
+        return { ok: true };
+      }),
+    };
+
+    await expect(
+      bridge.saveFile(payload, { __cwaNative: host })
+    ).resolves.toMatchObject({ ok: true, via: "native" });
+    expect(host.saveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns native_error when the host getter throws", () => {
+    const root = {};
+    Object.defineProperty(root, "__cwaNative", {
+      get() {
+        throw new Error("denied");
+      },
+    });
+
+    expect(bridge.ping(root)).toMatchObject({
+      ok   : false,
+      error: "native_error",
+    });
   });
 });

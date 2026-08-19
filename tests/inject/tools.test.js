@@ -21,10 +21,26 @@ describe("CwaTools", () => {
       catalog.matchAll(/^\s*-\s+id:\s+(\S+)/gm),
       (match) => match[1]
     );
-    const runtimeIds = tools.catalog().map((item) => item.id);
+    const runtime = tools.catalog();
+    const runtimeIds = runtime.map((item) => item.id);
+    const yamlEvents = Array.from(
+      catalog.matchAll(/^\s+event:\s+(\S+)/gm),
+      (match) => match[1]
+    );
+    const yamlActions = Array.from(
+      catalog.matchAll(/^\s+action:\s+(\S+)/gm),
+      (match) => match[1]
+    );
 
+    expect(catalog).toMatch(/^policy:\s*no default network\s*$/m);
     expect(yamlIds).toEqual(runtimeIds);
     expect(runtimeIds).toEqual(["copy-visible", "save-md", "save-zip", "diagnostics"]);
+    expect(yamlEvents).toEqual(
+      runtime.filter((item) => item.event).map((item) => item.event)
+    );
+    expect(yamlActions).toEqual(
+      runtime.filter((item) => item.action).map((item) => item.action)
+    );
   });
 
   it("freezes catalog records while catalog returns independent copies", () => {
@@ -140,13 +156,44 @@ describe("CwaTools", () => {
     const emit = vi.fn();
 
     ["redacted", "probe_failed"].forEach((error) => {
-      vi.stubGlobal("CwaDiagnostics", { snapshot: () => ({ error }), emit });
+      vi.stubGlobal("CwaDiagnostics", {
+        snapshot: () => ({ schema: "cwa.diagnostics.v1", error }),
+        emit,
+      });
       expect(tools.run("diagnostics")).toEqual({
         ok   : false,
         error: "diagnostics_unavailable",
       });
     });
 
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("reports diagnostics_unavailable for non-object or unversioned snapshots", () => {
+    const emit = vi.fn();
+
+    [{}, [], "ok", { schema: "other" }].forEach((snap) => {
+      vi.stubGlobal("CwaDiagnostics", { snapshot: () => snap, emit });
+      expect(tools.run("diagnostics")).toEqual({
+        ok   : false,
+        error: "diagnostics_unavailable",
+      });
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("reports diagnostics_unavailable when the window cannot dispatch", () => {
+    const emit = vi.fn();
+    vi.stubGlobal("CwaDiagnostics", {
+      snapshot: () => ({ schema: "cwa.diagnostics.v1" }),
+      emit,
+    });
+
+    expect(tools.run("diagnostics", { window: {} })).toEqual({
+      ok   : false,
+      error: "diagnostics_unavailable",
+    });
     expect(emit).not.toHaveBeenCalled();
   });
 

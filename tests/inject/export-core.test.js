@@ -268,6 +268,12 @@ describe("export manifest schema", () => {
     const filesSchema = MANIFEST_SCHEMA.properties.files;
 
     expect(MANIFEST_SCHEMA.required).toContain("media");
+    expect(MANIFEST_SCHEMA.properties.media.required).toEqual([
+      "workflow",
+      "included",
+      "failed",
+      "skipped",
+    ]);
     expect(MANIFEST_SCHEMA.properties.media.properties.workflow.enum).toEqual(["visible-dom"]);
     expect(filesSchema.allOf).toEqual([
       { contains: { const: "chat.md" } },
@@ -417,6 +423,98 @@ describe("collectVisibleThread", () => {
     expect(markdown).not.toContain("HIDDEN_CITE_SECRET");
   });
 
+  it("omits CSS-hidden text inside thinking, code, citations, tables, and file-card labels", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <div data-testid="reasoning">VISIBLE_THINK <span hidden>HIDDEN_IN_THINK</span></div>
+          <pre><code class="language-python">print("ok")<span hidden>HIDDEN_IN_CODE</span></code></pre>
+          <p>see <code>keep<span hidden>HIDDEN_INLINE_CODE</span></code></p>
+          <a href="https://docs.python.org/3/" data-testid="citation">Python<span hidden>HIDDEN_IN_CITE</span></a>
+          <table>
+            <tr><th>keep</th><th hidden>HIDDEN_TH</th></tr>
+            <tr><td>visible</td><td style="display: none">HIDDEN_TD</td></tr>
+          </table>
+        </div>
+        <a href="/files/abc">report<span hidden>HIDDEN_FILE_LABEL</span>.csv</a>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+    const markdown = core.serializeThreadToMarkdown(thread, { frontmatter: false });
+    const cards = core.collectVisibleFileCards(document);
+    const code = thread.messages[0].blocks.find((block) => block.type === "code");
+
+    expect(serialized).toContain("VISIBLE_THINK");
+    expect(code && code.text).toBe('print("ok")');
+    expect(serialized).not.toContain("HIDDEN_IN_THINK");
+    expect(serialized).not.toContain("HIDDEN_IN_CODE");
+    expect(serialized).not.toContain("HIDDEN_INLINE_CODE");
+    expect(serialized).not.toContain("HIDDEN_IN_CITE");
+    expect(serialized).not.toContain("HIDDEN_TH");
+    expect(serialized).not.toContain("HIDDEN_TD");
+    expect(markdown).not.toContain("HIDDEN_IN_THINK");
+    expect(markdown).not.toContain("HIDDEN_IN_CODE");
+    expect(markdown).not.toContain("HIDDEN_INLINE_CODE");
+    expect(markdown).not.toContain("HIDDEN_IN_CITE");
+    expect(markdown).not.toContain("HIDDEN_TH");
+    expect(markdown).not.toContain("HIDDEN_TD");
+    expect(cards.map((card) => card.alt)).toEqual(["report.csv"]);
+  });
+
+  it("walks the whole message when no data-message-content root exists", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <div class="markdown"><p>FIRST_MARKDOWN</p></div>
+          <div class="whitespace-pre-wrap">SIBLING_VISIBLE</div>
+          <img src="https://files.oaiusercontent.com/img-2.png" alt="extra">
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("FIRST_MARKDOWN");
+    expect(serialized).toContain("SIBLING_VISIBLE");
+    expect(serialized).toContain("https://files.oaiusercontent.com/img-2.png");
+  });
+
+  it("does not duplicate nested author-role markers as extra turns", () => {
+    document.body.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.insertAdjacentHTML(
+      "afterbegin",
+      `<main>
+        <div data-message-author-role="assistant">
+          <p>OUTER_VISIBLE</p>
+          <div data-message-author-role="assistant">
+            <p>INNER_VISIBLE</p>
+          </div>
+        </div>
+      </main>`
+    );
+    document.body.appendChild(wrap);
+
+    const thread = core.collectVisibleThread(document, { exportedAt: FIXED_ISO });
+    const serialized = JSON.stringify(thread);
+
+    expect(thread.messages).toHaveLength(1);
+    expect(serialized).toContain("OUTER_VISIBLE");
+    expect(serialized).toContain("INNER_VISIBLE");
+  });
+
   it("skips system and tool roles", () => {
     document.body.replaceChildren();
     const wrap = document.createElement("div");
@@ -457,6 +555,25 @@ describe("collectVisibleThread", () => {
     expect(signals.mediaFetchFailed).toBe(true);
     expect(signals.mediaSkipped).toBe(true);
     expect(signals.conversationJsonMissing).toBeUndefined();
+  });
+
+  it("scopes export-gap inspection to main", () => {
+    document.body.replaceChildren();
+    document.body.insertAdjacentHTML(
+      "afterbegin",
+      `<button data-testid="scroll-to-previous">Earlier messages</button>
+       <button>Canvas</button>
+       <span>Deep research</span>
+       <a download href="/files/outside.csv">outside</a>
+       <main><p>no conversation gaps here</p></main>`
+    );
+
+    const signals = core.inspectExportSignals(document.body);
+
+    expect(signals.unloadedMessages).toBe(false);
+    expect(signals.closedCanvases).toBe(false);
+    expect(signals.deepResearchPanels).toBe(false);
+    expect(signals.codeInterpreterFiles).toBe(false);
   });
 
   it("ignores nav and toolbar decoys while collecting the main file-card", () => {
