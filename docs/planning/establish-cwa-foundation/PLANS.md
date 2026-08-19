@@ -420,3 +420,46 @@ python3 scripts/validate_planning.py --strict
   WARN: jsonschema not installed; skipping --strict schema validation
   WARN: planning overlay (strict; jsonschema skipped)
 ```
+
+## Wave assurance round 5 (hidden text, native snapshot, diagnostics)
+
+Leftover P1/P2 after round 4. Chrome timeout/geometry/export inflight work from the remaining-inject hunt was already on `main` (`8e3758f`). No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| CSS-hidden descendants inside thinking/code/citations/tables/file-cards | `inject/export-core.js` | **PASS** |
+| First `.markdown` content root dropped sibling blocks | `inject/export-core.js` | **PASS** |
+| Nested `[data-message-author-role]` duplicated turns | `inject/export-core.js` | **PASS** |
+| Gap inspection scanned off-`main` chrome | `inject/export-core.js` | **PASS** |
+| Native `saveFile` reread payload after validation | `inject/native-bridge.js` | **PASS** |
+| Symbol extra keys missed by `Object.keys` | `inject/native-bridge.js` | **PASS** |
+| Host getter throw escaped `ping` | `inject/native-bridge.js` | **PASS** |
+| Diagnostics adapter accepted arrays / missing schema / no-op emit | `inject/tools.js` | **PASS** |
+| Manifest `media.required` omitted included/failed/skipped | `schemas/export-manifest.schema.json` | **PASS** |
+
+### Wave-assurance round 5 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 147 tests passed
+  node --test inject/chrome.test.js: 13 passed
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+
+diff -q pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```
