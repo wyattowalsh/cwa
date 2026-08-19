@@ -8,6 +8,15 @@
   var SIDEBAR_MAX     = 420;
   var SIDEBAR_DEFAULT = 280;
   var SIDEBAR_COLLAPSE_MAX = 96;
+  var SIDEBAR_STYLE_PROPERTIES = [
+    "width",
+    "min-width",
+    "max-width",
+    "flex-basis",
+    "flex-shrink",
+    "--sidebar-width",
+    "position",
+  ];
   var THEME_SENTINEL  = "cwa-theme-sentinel";
   var STYLE_ID        = "cwa-theme";
   var STORAGE_WIDTH   = "cwa.sidebarWidth";
@@ -252,6 +261,7 @@
   var themeSheet = null;
   var cachedThemeCss = "";
   var sidebarEl = null;
+  var sidebarStyleSnapshot = null;
   var handleEl = null;
   var dragging = false;
   var dragStartX = 0;
@@ -449,11 +459,27 @@
     return candidates[0] || null;
   }
 
+  function sidebarWidthApplied(node, px) {
+    var style = node && node.style;
+    var rootStyle = document.documentElement && document.documentElement.style;
+    var important = ["width", "min-width", "max-width", "flex-basis", "flex-shrink"];
+    var expected = [px, px, px, px, "0"];
+    if (!style || !rootStyle) return false;
+    for (var i = 0; i < important.length; i++) {
+      if (style.getPropertyValue(important[i]) !== expected[i] ||
+          style.getPropertyPriority(important[i]) !== "important") {
+        return false;
+      }
+    }
+    return style.getPropertyValue("--sidebar-width") === px &&
+      rootStyle.getPropertyValue("--sidebar-width") === px;
+  }
+
   function applySidebarWidth(node, width, force) {
     if (!node) return;
     if (!force && isCollapsed(node)) return;
     var px = clampSidebarWidth(width) + "px";
-    if (!force && node.style.width === px) return;
+    if (!force && sidebarWidthApplied(node, px)) return;
     node.style.setProperty("width", px, "important");
     node.style.setProperty("min-width", px, "important");
     node.style.setProperty("max-width", px, "important");
@@ -560,16 +586,63 @@
     node.appendChild(handleEl);
   }
 
+  function captureSidebarStyles(node) {
+    var styles = {};
+    var rootStyle = document.documentElement && document.documentElement.style;
+    var i;
+    var name;
+    if (!node || !node.style) {
+      sidebarStyleSnapshot = null;
+      return;
+    }
+    for (i = 0; i < SIDEBAR_STYLE_PROPERTIES.length; i++) {
+      name = SIDEBAR_STYLE_PROPERTIES[i];
+      styles[name] = {
+        value   : node.style.getPropertyValue(name),
+        priority: node.style.getPropertyPriority(name),
+      };
+    }
+    sidebarStyleSnapshot = {
+      node     : node,
+      styles   : styles,
+      rootValue: rootStyle ? rootStyle.getPropertyValue("--sidebar-width") : "",
+      rootPriority: rootStyle ? rootStyle.getPropertyPriority("--sidebar-width") : "",
+    };
+  }
+
+  function restoreStyleProperty(style, name, saved) {
+    if (!style || !saved) return;
+    if (saved.value) {
+      style.setProperty(name, saved.value, saved.priority);
+    } else {
+      style.removeProperty(name);
+    }
+  }
+
   function clearSidebarStyles(node) {
+    var snapshot = sidebarStyleSnapshot;
+    var rootStyle = document.documentElement && document.documentElement.style;
+    var i;
+    var name;
     if (!node || !node.style || typeof node.style.removeProperty !== "function") {
       return;
     }
-    node.style.removeProperty("width");
-    node.style.removeProperty("min-width");
-    node.style.removeProperty("max-width");
-    node.style.removeProperty("flex-basis");
-    node.style.removeProperty("flex-shrink");
-    node.style.removeProperty("--sidebar-width");
+    if (snapshot && snapshot.node === node) {
+      for (i = 0; i < SIDEBAR_STYLE_PROPERTIES.length; i++) {
+        name = SIDEBAR_STYLE_PROPERTIES[i];
+        restoreStyleProperty(node.style, name, snapshot.styles[name]);
+      }
+      restoreStyleProperty(rootStyle, "--sidebar-width", {
+        value   : snapshot.rootValue,
+        priority: snapshot.rootPriority,
+      });
+    } else {
+      for (i = 0; i < SIDEBAR_STYLE_PROPERTIES.length - 1; i++) {
+        node.style.removeProperty(SIDEBAR_STYLE_PROPERTIES[i]);
+      }
+      if (rootStyle) rootStyle.removeProperty("--sidebar-width");
+    }
+    sidebarStyleSnapshot = null;
   }
 
   function unmountHandle() {
@@ -580,6 +653,7 @@
   }
 
   function releaseSidebar(node) {
+    dragging = false;
     unmountHandle();
     clearSidebarStyles(node);
   }
@@ -587,10 +661,17 @@
   function syncSidebar() {
     if (isSafe()) return;
     var node = findSidebar();
-    if (!node) return;
+    if (!node) {
+      if (sidebarEl) {
+        releaseSidebar(sidebarEl);
+        sidebarEl = null;
+      }
+      return;
+    }
     if (sidebarEl !== node) {
       if (sidebarEl) releaseSidebar(sidebarEl);
       sidebarEl = node;
+      captureSidebarStyles(node);
       ensureSidebarLandmark(node);
       mountHandle(node);
     } else {

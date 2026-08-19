@@ -389,4 +389,53 @@ describe("chrome runtime isolation", () => {
       runtime.window.close();
     }
   });
+
+  it("repairs partial sidebar geometry and restores it when the sidebar disappears", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        document.documentElement.style.setProperty("--sidebar-width", "164px");
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.style.setProperty("width", "240px");
+        sidebar.style.setProperty("min-width", "180px");
+        sidebar.style.setProperty("position", "absolute");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+      expect(sidebar.style.getPropertyValue("min-width")).toBe("280px");
+      expect(sidebar.style.getPropertyPriority("min-width")).toBe("important");
+      expect(runtime.document.documentElement.style.getPropertyValue("--sidebar-width")).toBe("280px");
+
+      sidebar.style.removeProperty("min-width");
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+
+      expect(sidebar.style.getPropertyValue("min-width")).toBe("280px");
+      expect(sidebar.style.getPropertyPriority("min-width")).toBe("important");
+
+      sidebar.remove();
+      runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
+
+      expect(sidebar.querySelector(".cwa-sidebar-handle")).toBeNull();
+      expect(sidebar.style.getPropertyValue("width")).toBe("240px");
+      expect(sidebar.style.getPropertyValue("min-width")).toBe("180px");
+      expect(sidebar.style.getPropertyValue("position")).toBe("absolute");
+      expect(runtime.document.documentElement.style.getPropertyValue("--sidebar-width")).toBe("164px");
+    } finally {
+      runtime.window.close();
+    }
+  });
 });
