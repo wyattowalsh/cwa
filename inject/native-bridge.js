@@ -102,10 +102,15 @@
 
   function awaitHostSave(host, payload, root) {
     var timeoutMs = SAVE_TIMEOUT_MS;
-    var timerApi = root && typeof root.setTimeout === "function" ? root : global;
+    var timerApi = root
+      && typeof root.setTimeout === "function"
+      && typeof root.clearTimeout === "function"
+      ? root
+      : global;
     return new Promise(function (resolve) {
       var settled = false;
       var timer;
+      var pending;
       function finish(value) {
         if (settled) {
           return;
@@ -121,7 +126,13 @@
           finish({ ok: false, error: "native_error", protocol: PROTOCOL });
         }, timeoutMs);
       }
-      Promise.resolve(host.saveFile(payload)).then(function (value) {
+      try {
+        pending = host.saveFile(payload);
+      } catch (_err) {
+        finish({ ok: false, error: "native_error", protocol: PROTOCOL });
+        return;
+      }
+      Promise.resolve(pending).then(function (value) {
         finish(value);
       }, function () {
         finish({ ok: false, error: "native_error", protocol: PROTOCOL });

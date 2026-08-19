@@ -183,9 +183,16 @@ describe("CwaNativeBridge", () => {
         throw new Error("host failed");
       }),
     };
+    const root = {
+      __cwaNative : host,
+      setTimeout  : vi.fn(() => 17),
+      clearTimeout: vi.fn(),
+    };
     await expect(
-      bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, { __cwaNative: host })
+      bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, root)
     ).resolves.toMatchObject({ ok: false, error: "native_error" });
+    expect(root.setTimeout).toHaveBeenCalledWith(expect.any(Function), 8000);
+    expect(root.clearTimeout).toHaveBeenCalledWith(17);
   });
 
   it("returns native_error when the host rejects", async () => {
@@ -209,5 +216,20 @@ describe("CwaNativeBridge", () => {
       ok   : false,
       error: "native_error",
     });
+  });
+
+  it("clears the native timeout after a successful save", async () => {
+    const host = { saveFile: vi.fn(async () => ({ ok: true })) };
+    const root = {
+      __cwaNative : host,
+      setTimeout  : vi.fn(() => 23),
+      clearTimeout: vi.fn(),
+    };
+
+    await expect(
+      bridge.saveFile({ filename: "cwa.md", blob: new Blob(["md"]) }, root)
+    ).resolves.toMatchObject({ ok: true, via: "native" });
+    expect(root.clearTimeout).toHaveBeenCalledTimes(1);
+    expect(root.clearTimeout).toHaveBeenCalledWith(23);
   });
 });
