@@ -463,3 +463,45 @@ rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" i
 git diff --check
   clean
 ```
+
+## Wave assurance round 6 (Wave 2 chrome + Wave 5 media leftovers)
+
+Independent audits of Wave 2 and Wave 5 against `bd264b1`, applied on current `main`. Geometry restore, hidden file-card labels, and in-main fixture decoys were already on `main`. No Wave 6.
+
+| Gap | Owner | Result |
+| --- | --- | --- |
+| Safe-mode strikes on home/settings/`/c/new` | `inject/chrome.js` | **PASS** |
+| History rescans bypassed scheduler coalescing | `inject/chrome.js` | **PASS** |
+| Document-wide role decoys masked in-`main` article fallbacks | `inject/chrome.js` | **PASS** |
+| First `<main>` could be a hidden stale pane | `inject/export-core.js` | **PASS** |
+| URL fragments split one media resource into many fetches | `inject/export-core.js` | **PASS** |
+| Chrome runtime tests stubbed Wave 2 modules | `tests/inject/chrome.runtime.test.js` | **PASS** |
+| Escaped/Unicode class-only selectors were allowed | `inject/selectors.js` | **PASS** |
+| `lifecycle.boot()` could leave safe | `inject/lifecycle.js` | **PASS** |
+
+### Wave-assurance round 6 executed commands
+
+```text
+pnpm test
+  Vitest: 11 files, 154 tests passed
+  node --test inject/chrome.test.js: 13 passed
+
+python3 scripts/validate_planning.py
+  PASS: planning overlay
+
+python3 scripts/validate_planning.py --runtime
+  PASS: planning overlay (runtime)
+
+python3 scripts/validate_planning.py --strict
+  WARN: jsonschema not installed; skipping --strict schema validation
+  WARN: planning overlay (strict; jsonschema skipped)
+
+diff -q pake.json pake.cwa.json
+  identical (exit 0)
+
+rg -n "/backend-api/conversation|/backend-api/conversations|/api/auth/session" inject
+  inject/: no hits
+
+git diff --check
+  clean
+```
