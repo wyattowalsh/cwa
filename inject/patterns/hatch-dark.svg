@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">
+  <linearGradient id="hatch-dark-lg0" gradientUnits="userSpaceOnUse" spreadMethod="repeat" x1="0" y1="28" x2="28" y2="28">
+    <stop offset="0" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".464" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".464" stop-color="#5eead4" stop-opacity=".059"/>
+    <stop offset=".48" stop-color="#5eead4" stop-opacity=".059"/>
+    <stop offset=".48" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </linearGradient>
+  <rect x="0" y="0" width="56" height="56" fill="url(#hatch-dark-lg0)"/>
+  <linearGradient id="hatch-dark-lg1" gradientUnits="userSpaceOnUse" spreadMethod="repeat" x1="10.222" y1="61.435" x2="16.795" y2="49.074">
+    <stop offset="0" stop-color="#f0b429" stop-opacity=".09"/>
+    <stop offset=".025" stop-color="#f0b429" stop-opacity=".09"/>
+    <stop offset=".025" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </linearGradient>
+  <rect x="0" y="0" width="56" height="56" fill="url(#hatch-dark-lg1)"/>
+  <linearGradient id="hatch-dark-lg2" gradientUnits="userSpaceOnUse" spreadMethod="repeat" x1="0" y1="0" x2="5.657" y2="5.657">
+    <stop offset="0" stop-color="#5eead4" stop-opacity=".161"/>
+    <stop offset=".069" stop-color="#5eead4" stop-opacity=".161"/>
+    <stop offset=".069" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </linearGradient>
+  <rect x="0" y="0" width="56" height="56" fill="url(#hatch-dark-lg2)"/>
+</svg>

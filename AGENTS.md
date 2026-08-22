@@ -13,13 +13,14 @@
 
 `cwa` is a [Pake](https://github.com/tw93/Pake) (Tauri v2) wrapper that packages
 `chatgpt.com` into a desktop app. The code that actually lives in this repo is the
-**inject layer** under `inject/` (`chrome.js` custom window chrome + minimap/sidebar,
+**inject layer** under `inject/` (`chrome.js` custom window chrome + drag-resize sidebar (`cwa.sidebarWidth`) + minimap + `[data-cwa-chrome]` SVG textures,
 `theme.css`, and the `export-core.js` / `export.js` visible-thread export feature),
 plus the wrapper config `pake.cwa.json`. Day-to-day work is editing those files and
 running the tests; the Tauri build only packages them.
 
 ### Lint / test
 - `pnpm test` runs the full suite: `vitest run` (happy-dom) **and** `node --test inject/chrome.test.js`. It is Node-only, fast, and the primary dev loop. `pnpm test:watch` for watch mode. There is no separate lint step.
+- `pnpm regen:chrome-patterns` re-renders `inject/patterns/*.svg` with takumi-js (devDependency) and inlines data-URIs in `inject/theme.css`. Do not add those SVGs to the Pake inject list.
 
 ### Build (non-obvious)
 - `pnpm pake:build` / `pnpm pake:install` pass `--targets app`, which is **macOS-only**. On the Linux cloud VM that fails with `No valid Linux target in "app"`. Build a Linux target instead:

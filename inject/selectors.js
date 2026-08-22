@@ -20,6 +20,7 @@
         "nav[aria-label*='sidebar' i]",
         "nav[aria-label*='history' i]",
         "nav[aria-label*='conversation' i]",
+        "[data-testid='history-sidebar']",
         "[data-testid='left-sidebar']",
         "[data-testid='sidebar']",
         "#stage-slideover-sidebar",

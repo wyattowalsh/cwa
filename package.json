@@ -8,11 +8,13 @@
     "pake:build": "pake --config pake.cwa.json --targets app",
     "pake:install": "pake --config pake.cwa.json --targets app --install",
     "test": "vitest run && node --test inject/chrome.test.js",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "regen:chrome-patterns": "node scripts/regen-chrome-patterns.mjs"
   },
   "devDependencies": {
     "happy-dom": "20.11.2",
     "pake-cli": "3.15.7",
+    "takumi-js": "2.10.0",
     "vitest": "4.1.11"
   }
 }

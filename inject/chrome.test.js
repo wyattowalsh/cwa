@@ -18,6 +18,9 @@ const {
   shouldIgnoreMutations,
   isSidebarCandidate,
   isTypingTarget,
+  snapSidebarWidth,
+  sidebarResizeSign,
+  SIDEBAR_SNAPS,
 } = chrome;
 
 test("clampSidebarWidth clamps to 200–420 and rounds", () => {
@@ -149,6 +152,53 @@ test("isSidebarCandidate rejects chrome decoys and exact geometry bounds", () =>
   assert.equal(isSidebarCandidate(sidebar({ height: 120, width: 240, left: 20 }, false)), false);
   assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 40, left: 20 }, false)), false);
   assert.equal(isSidebarCandidate(sidebar({ height: 500, width: 240, left: 280 }, false)), false);
+  assert.equal(isSidebarCandidate(sidebar({
+    height: 500,
+    width : 240,
+    left  : 1680,
+    right : 1920,
+  }, false), 1920), true);
+  assert.equal(isSidebarCandidate(sidebar({
+    height: 500,
+    width : 240,
+    left  : 800,
+    right : 1040,
+  }, false), 1920), false);
+});
+
+test("snapSidebarWidth snaps within 12px and otherwise leaves the clamp", () => {
+  assert.equal(snapSidebarWidth(280), 280);
+  assert.equal(snapSidebarWidth(291), 280);
+  assert.equal(snapSidebarWidth(308), 320);
+  assert.equal(snapSidebarWidth(333), 333);
+  assert.equal(snapSidebarWidth(199), SIDEBAR_MIN);
+  assert.equal(snapSidebarWidth(500), SIDEBAR_MAX);
+  assert.ok(SIDEBAR_SNAPS.indexOf(280) !== -1);
+});
+
+test("sidebarResizeSign follows RTL and right-edge geometry", () => {
+  function rail(rect, dir) {
+    return {
+      nodeType: 1,
+      dir: dir || "",
+      getAttribute(name) {
+        return name === "dir" ? dir || "" : "";
+      },
+      getBoundingClientRect() {
+        return rect;
+      },
+    };
+  }
+
+  assert.equal(sidebarResizeSign(rail({ left: 0, width: 240, right: 240 }, "ltr"), {
+    viewportWidth: 1280,
+  }), 1);
+  assert.equal(sidebarResizeSign(rail({ left: 1040, width: 240, right: 1280 }, "ltr"), {
+    viewportWidth: 1280,
+  }), -1);
+  assert.equal(sidebarResizeSign(rail({ left: 0, width: 240, right: 240 }, "rtl"), {
+    viewportWidth: 1280,
+  }), -1);
 });
 
 test("shouldIgnoreMutations ignores only chrome-owned mutation batches", () => {

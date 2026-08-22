@@ -629,12 +629,238 @@ describe("chrome runtime isolation", () => {
         clientX  : 80,
         pointerId: 1,
       }));
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+      runtime.flushFrames();
       expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+      expect(runtime.document.documentElement.getAttribute("data-cwa-sidebar-dragging")).toBe("true");
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBeNull();
 
       runtime.window.dispatchEvent(new runtime.window.PopStateEvent("popstate"));
       runtime.flushTimeouts();
 
       expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("persists a clamped width when pointerup lands on window", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      expect(handle.getAttribute("aria-valuemin")).toBe("200");
+      expect(handle.getAttribute("aria-valuemax")).toBe("420");
+
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointerdown", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 240,
+        pointerId: 7,
+      }));
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 900,
+        pointerId: 7,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("420px");
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBeNull();
+
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointerup", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 900,
+        pointerId: 7,
+      }));
+      expect(sidebar.style.getPropertyValue("width")).toBe("420px");
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBe("420");
+      expect(handle.getAttribute("aria-valuenow")).toBe("420");
+      expect(handle.getAttribute("data-active")).toBeNull();
+      expect(runtime.document.documentElement.hasAttribute("data-cwa-sidebar-dragging")).toBe(false);
+
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 1000,
+        pointerId: 7,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("420px");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("releases a stuck drag on pointercancel without leaving dragging chrome", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointerdown", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 0,
+        pointerId: 3,
+      }));
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        clientX  : 40,
+        pointerId: 3,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointercancel", {
+        bubbles  : true,
+        pointerId: 3,
+      }));
+      expect(runtime.document.documentElement.hasAttribute("data-cwa-sidebar-dragging")).toBe(false);
+      expect(handle.getAttribute("data-active")).toBeNull();
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBe("280");
+
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        clientX  : 120,
+        pointerId: 3,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("inverts drag delta for a right-edge RTL sidebar", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 1040,
+      width : 240,
+      height: 400,
+      right : 1280,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(window, document) {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.setAttribute("dir", "rtl");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      expect(handle.getAttribute("data-edge")).toBe("start");
+
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointerdown", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 1040,
+        pointerId: 2,
+      }));
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        clientX  : 960,
+        pointerId: 2,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointerup", {
+        bubbles  : true,
+        pointerId: 2,
+      }));
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBe("320");
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("resets sidebar width with Escape and does not stay stuck after blur", () => {
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      handle.dispatchEvent(new runtime.window.PointerEvent("pointerdown", {
+        bubbles  : true,
+        button   : 0,
+        clientX  : 0,
+        pointerId: 9,
+      }));
+      runtime.window.dispatchEvent(new runtime.window.PointerEvent("pointermove", {
+        bubbles  : true,
+        clientX  : 80,
+        pointerId: 9,
+      }));
+      runtime.flushFrames();
+      expect(sidebar.style.getPropertyValue("width")).toBe("320px");
+
+      runtime.window.dispatchEvent(new runtime.window.Event("blur"));
+      expect(runtime.document.documentElement.hasAttribute("data-cwa-sidebar-dragging")).toBe(false);
+
+      handle.dispatchEvent(new runtime.window.KeyboardEvent("keydown", {
+        bubbles: true,
+        key    : "Escape",
+      }));
+      expect(sidebar.style.getPropertyValue("width")).toBe("280px");
+      expect(runtime.window.localStorage.getItem("cwa.sidebarWidth")).toBe("280");
     } finally {
       runtime.window.close();
     }
@@ -653,6 +879,49 @@ describe("chrome runtime isolation", () => {
       runtime.resetSafeMode();
       expect(runtime.document.getElementById("cwa-minimap")).not.toBeNull();
       expect(runtime.document.getElementById("cwa-toolbar")).not.toBeNull();
+    } finally {
+      runtime.window.close();
+    }
+  });
+
+  it("paints SVG textures only on CWA chrome widgets", () => {
+    const themeCss = readFileSync("inject/theme.css", "utf8");
+    const sidebarRect = {
+      top   : 0,
+      left  : 0,
+      width : 240,
+      height: 400,
+      right : 240,
+      bottom: 400,
+    };
+    let sidebar;
+    const runtime = bootChrome({
+      setup(_window, document) {
+        const style = document.createElement("style");
+        style.id = "cwa-theme";
+        style.setAttribute("data-cwa-theme", "1");
+        style.textContent = themeCss;
+        document.documentElement.appendChild(style);
+        sidebar = document.createElement("nav");
+        sidebar.setAttribute("aria-label", "Chat history");
+        sidebar.getBoundingClientRect = () => sidebarRect;
+        document.body.appendChild(sidebar);
+      },
+    });
+
+    try {
+      runtime.flushFrames();
+      const toolbar = runtime.document.getElementById("cwa-toolbar");
+      const minimap = runtime.document.getElementById("cwa-minimap");
+      const handle = sidebar.querySelector(".cwa-sidebar-handle");
+      expect(toolbar.getAttribute("data-cwa-chrome")).toBe("1");
+      expect(minimap.getAttribute("data-cwa-chrome")).toBe("1");
+      expect(handle.getAttribute("data-cwa-chrome")).toBe("1");
+
+      const toolbarBg = runtime.window.getComputedStyle(toolbar).backgroundImage;
+      const bodyBg = runtime.window.getComputedStyle(runtime.document.body).backgroundImage;
+      expect(toolbarBg).toContain("data:image/svg+xml");
+      expect(bodyBg === "none" || !bodyBg.includes("data:image/svg+xml")).toBe(true);
     } finally {
       runtime.window.close();
     }

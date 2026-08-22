@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="80" viewBox="0 0 16 80">
+  <linearGradient id="contour-light-lg0" gradientUnits="userSpaceOnUse" spreadMethod="repeat" x1="0" y1="40" x2="16" y2="40">
+    <stop offset="0" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".475" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".475" stop-color="#075985" stop-opacity=".102"/>
+    <stop offset=".506" stop-color="#075985" stop-opacity=".102"/>
+    <stop offset=".506" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </linearGradient>
+  <rect x="0" y="0" width="16" height="80" fill="url(#contour-light-lg0)"/>
+  <radialGradient id="contour-light-rg1" gradientUnits="userSpaceOnUse" spreadMethod="repeat" cx="8" cy="40" r="11" gradientTransform="matrix(.636 0 0 1 2.909 0)">
+    <stop offset="0" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".455" stop-color="#000" stop-opacity="0"/>
+    <stop offset=".455" stop-color="#0f766e" stop-opacity=".18"/>
+    <stop offset=".518" stop-color="#0f766e" stop-opacity=".18"/>
+    <stop offset=".518" stop-color="#000" stop-opacity="0"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </radialGradient>
+  <rect x="0" y="0" width="16" height="80" fill="url(#contour-light-rg1)"/>
+  </svg>

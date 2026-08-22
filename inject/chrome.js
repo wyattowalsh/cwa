@@ -7,6 +7,9 @@
   var SIDEBAR_MIN     = 200;
   var SIDEBAR_MAX     = 420;
   var SIDEBAR_DEFAULT = 280;
+  var SIDEBAR_EDGE    = 280;
+  var SIDEBAR_SNAPS   = [240, 280, 320, 360];
+  var SIDEBAR_SNAP_PX = 12;
   var SIDEBAR_COLLAPSE_MAX = 96;
   var SIDEBAR_STYLE_PROPERTIES = [
     "width",
@@ -33,6 +36,7 @@
     "nav[aria-label*='sidebar' i]",
     "nav[aria-label*='history' i]",
     "nav[aria-label*='conversation' i]",
+    "[data-testid='history-sidebar']",
     "[data-testid='left-sidebar']",
     "[data-testid='sidebar']",
     "#stage-slideover-sidebar",
@@ -122,6 +126,80 @@
     if (rounded < lo) return lo;
     if (rounded > hi) return hi;
     return rounded;
+  }
+
+  function snapSidebarWidth(width) {
+    var clamped = clampSidebarWidth(width);
+    var best = clamped;
+    var bestDist = SIDEBAR_SNAP_PX + 1;
+    var i;
+    var candidate;
+    var dist;
+    for (i = 0; i < SIDEBAR_SNAPS.length; i++) {
+      candidate = clampSidebarWidth(SIDEBAR_SNAPS[i]);
+      dist = Math.abs(candidate - clamped);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = candidate;
+      }
+    }
+    return bestDist <= SIDEBAR_SNAP_PX ? best : clamped;
+  }
+
+  function viewportWidth(explicit) {
+    if (explicit != null && isFinite(explicit)) return Number(explicit);
+    try {
+      if (typeof window !== "undefined" && isFinite(window.innerWidth)) {
+        return window.innerWidth;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  function rectRight(rect) {
+    if (!rect) return 0;
+    if (typeof rect.right === "number" && isFinite(rect.right)) return rect.right;
+    return (rect.left || 0) + (rect.width || 0);
+  }
+
+  function sidebarDirection(node, explicit) {
+    var view;
+    var current;
+    var attr;
+    if (explicit) return String(explicit).toLowerCase();
+    current = node;
+    while (current && current.nodeType === 1) {
+      attr = current.getAttribute && current.getAttribute("dir");
+      if (attr) return String(attr).toLowerCase();
+      if (current.dir) return String(current.dir).toLowerCase();
+      current = current.parentElement;
+    }
+    try {
+      view = (node && node.ownerDocument && node.ownerDocument.defaultView) ||
+        (typeof window !== "undefined" ? window : null);
+      if (view && typeof view.getComputedStyle === "function" && node) {
+        return String(view.getComputedStyle(node).direction || "ltr").toLowerCase();
+      }
+    } catch (_) {}
+    return "ltr";
+  }
+
+  function sidebarResizeSign(node, options) {
+    var opts = options || {};
+    var rect;
+    var vw;
+    var left;
+    var right;
+    if (!node || typeof node.getBoundingClientRect !== "function") {
+      return sidebarDirection(node, opts.direction) === "rtl" ? -1 : 1;
+    }
+    rect = node.getBoundingClientRect();
+    vw = viewportWidth(opts.viewportWidth);
+    left = rect.left || 0;
+    right = rectRight(rect);
+    if (sidebarDirection(node, opts.direction) === "rtl") return -1;
+    if (vw > 0 && right > vw - SIDEBAR_EDGE && left >= SIDEBAR_EDGE) return -1;
+    return 1;
   }
 
   function mapMinimapYToIndex(y, height, count) {
@@ -279,13 +357,16 @@
     return /^\/c\/[A-Za-z0-9_-]+/.test(path);
   }
 
-  function isSidebarCandidate(node) {
+  function isSidebarCandidate(node, viewportWidthHint) {
     if (!node || isChromeOwnedNode(node) ||
         typeof node.getBoundingClientRect !== "function") {
       return false;
     }
     var rect = node.getBoundingClientRect();
-    return rect.height > 120 && rect.width > 40 && rect.left < 280;
+    var vw = viewportWidth(viewportWidthHint);
+    var nearLeft = rect.left < SIDEBAR_EDGE;
+    var nearRight = vw > 0 && rectRight(rect) > vw - SIDEBAR_EDGE;
+    return rect.height > 120 && rect.width > 40 && (nearLeft || nearRight);
   }
 
   function isTypingTarget(node) {
@@ -309,9 +390,13 @@
     shouldIgnoreMutations: shouldIgnoreMutations,
     isSidebarCandidate: isSidebarCandidate,
     isTypingTarget: isTypingTarget,
+    snapSidebarWidth: snapSidebarWidth,
+    sidebarResizeSign: sidebarResizeSign,
     SIDEBAR_MIN: SIDEBAR_MIN,
     SIDEBAR_MAX: SIDEBAR_MAX,
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT,
+    SIDEBAR_EDGE: SIDEBAR_EDGE,
+    SIDEBAR_SNAPS: SIDEBAR_SNAPS,
     EVENTS: EVENTS,
     STORAGE_WIDTH: STORAGE_WIDTH,
     runtime: function runtime() {
@@ -337,8 +422,14 @@
   var sidebarStyleSnapshot = null;
   var handleEl = null;
   var dragging = false;
+  var dragWindowBound = false;
+  var dragRaf = 0;
   var dragStartX = 0;
   var dragStartW = 0;
+  var dragLatestX = 0;
+  var dragLatestWidth = 0;
+  var dragPointerId = 0;
+  var dragSign = 1;
   var minimapMessages = [];
   var minimapScroller = null;
   var paletteIndex = 0;
@@ -562,6 +653,7 @@
       node.style.setProperty("--sidebar-width", px);
       document.documentElement.style.setProperty("--sidebar-width", px);
     } catch (_) {}
+    if (node === sidebarEl) updateHandleAria(clampSidebarWidth(width));
   }
 
   function ensureSidebarLandmark(node) {
@@ -576,38 +668,148 @@
     if (style.position === "static") node.style.position = "relative";
   }
 
+  function updateHandleAria(width) {
+    var boundsMin = SIDEBAR_MIN;
+    var boundsMax = SIDEBAR_MAX;
+    var now = clampSidebarWidth(width);
+    if (!handleEl) return;
+    handleEl.setAttribute("aria-valuemin", String(boundsMin));
+    handleEl.setAttribute("aria-valuemax", String(boundsMax));
+    handleEl.setAttribute("aria-valuenow", String(now));
+    handleEl.setAttribute("aria-valuetext", now + " pixels");
+  }
+
+  function updateHandleEdge(node) {
+    var sign;
+    if (!handleEl) return;
+    sign = sidebarResizeSign(node);
+    if (sign < 0) handleEl.setAttribute("data-edge", "start");
+    else handleEl.removeAttribute("data-edge");
+  }
+
+  function setDraggingChrome(active) {
+    var root = document.documentElement;
+    if (!root) return;
+    if (active) root.setAttribute("data-cwa-sidebar-dragging", "true");
+    else root.removeAttribute("data-cwa-sidebar-dragging");
+  }
+
+  function cancelDragRaf() {
+    if (!dragRaf) return;
+    try {
+      cancelAnimationFrame(dragRaf);
+    } catch (_) {}
+    dragRaf = 0;
+  }
+
+  function flushDragWidth() {
+    var next;
+    dragRaf = 0;
+    if (!dragging || !sidebarEl) return;
+    next = clampSidebarWidth(dragStartW + (dragLatestX - dragStartX) * dragSign);
+    dragLatestWidth = next;
+    applySidebarWidth(sidebarEl, next, true);
+    updateHandleAria(next);
+  }
+
+  function bindWindowDrag() {
+    if (dragWindowBound) return;
+    dragWindowBound = true;
+    window.addEventListener("pointermove", onWindowPointerMove, { passive: true });
+    window.addEventListener("pointerup", onHandlePointerUp);
+    window.addEventListener("pointercancel", onHandlePointerUp);
+    window.addEventListener("blur", onHandlePointerUp);
+  }
+
+  function unbindWindowDrag() {
+    if (!dragWindowBound) return;
+    dragWindowBound = false;
+    window.removeEventListener("pointermove", onWindowPointerMove);
+    window.removeEventListener("pointerup", onHandlePointerUp);
+    window.removeEventListener("pointercancel", onHandlePointerUp);
+    window.removeEventListener("blur", onHandlePointerUp);
+  }
+
+  function endSidebarDrag(options) {
+    var opts = options || {};
+    var persist = opts.persist !== false;
+    var snapped;
+    if (!dragging && !dragWindowBound) return;
+    cancelDragRaf();
+    if (dragging && sidebarEl && persist) {
+      flushDragWidth();
+      snapped = snapSidebarWidth(dragLatestWidth || sidebarEl.getBoundingClientRect().width);
+      applySidebarWidth(sidebarEl, snapped, true);
+      updateHandleAria(snapped);
+      writeStoredWidth(snapped);
+    }
+    dragging = false;
+    dragPointerId = 0;
+    dragSign = 1;
+    setDraggingChrome(false);
+    if (handleEl) {
+      handleEl.removeAttribute("data-active");
+      try {
+        if (opts.pointerId != null && handleEl.hasPointerCapture &&
+            handleEl.hasPointerCapture(opts.pointerId)) {
+          handleEl.releasePointerCapture(opts.pointerId);
+        }
+      } catch (_) {}
+    }
+    unbindWindowDrag();
+  }
+
   function onHandlePointerDown(event) {
     if (isSafe()) return;
     if (event.button != null && event.button !== 0) return;
     if (!sidebarEl) return;
+    endSidebarDrag({ persist: false });
     dragging = true;
     dragStartX = event.clientX;
+    dragLatestX = event.clientX;
     dragStartW = sidebarEl.getBoundingClientRect().width;
-    handleEl.setAttribute("data-active", "true");
+    dragLatestWidth = clampSidebarWidth(dragStartW);
+    dragPointerId = event.pointerId;
+    dragSign = sidebarResizeSign(sidebarEl);
+    if (handleEl) handleEl.setAttribute("data-active", "true");
+    updateHandleEdge(sidebarEl);
+    setDraggingChrome(true);
+    bindWindowDrag();
     try {
-      handleEl.setPointerCapture(event.pointerId);
+      if (handleEl && event.pointerId != null) {
+        handleEl.setPointerCapture(event.pointerId);
+      }
     } catch (_) {}
     event.preventDefault();
   }
 
-  function onHandlePointerMove(event) {
-    if (isSafe()) return;
-    if (!dragging || !sidebarEl) return;
-    var next = clampSidebarWidth(dragStartW + (event.clientX - dragStartX));
-    applySidebarWidth(sidebarEl, next, true);
+  function onWindowPointerMove(event) {
+    if (isSafe() || !dragging) return;
+    if (event.pointerId != null && dragPointerId && event.pointerId !== dragPointerId) {
+      return;
+    }
+    dragLatestX = event.clientX;
+    if (dragRaf) return;
+    dragRaf = requestAnimationFrame(flushDragWidth);
   }
 
   function onHandlePointerUp(event) {
-    if (isSafe()) return;
-    if (!dragging) return;
-    dragging = false;
-    if (handleEl) handleEl.removeAttribute("data-active");
-    try {
-      if (event && handleEl.hasPointerCapture(event.pointerId)) {
-        handleEl.releasePointerCapture(event.pointerId);
-      }
-    } catch (_) {}
-    if (sidebarEl) writeStoredWidth(sidebarEl.getBoundingClientRect().width);
+    var pointerId = event && event.pointerId;
+    if (!dragging) {
+      unbindWindowDrag();
+      return;
+    }
+    if (pointerId != null && dragPointerId && pointerId !== dragPointerId) return;
+    endSidebarDrag({ persist: true, pointerId: pointerId });
+  }
+
+  function onHandleDoubleClick(event) {
+    if (isSafe() || !sidebarEl) return;
+    event.preventDefault();
+    endSidebarDrag({ persist: false });
+    applySidebarWidth(sidebarEl, SIDEBAR_DEFAULT, true);
+    updateHandleAria(SIDEBAR_DEFAULT);
+    writeStoredWidth(SIDEBAR_DEFAULT);
   }
 
   function onHandleKeyDown(event) {
@@ -615,23 +817,29 @@
     if (!sidebarEl) return;
     var step = event.shiftKey ? 24 : 8;
     var current = sidebarEl.getBoundingClientRect().width;
+    var sign = sidebarResizeSign(sidebarEl);
+    var next;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      applySidebarWidth(sidebarEl, current - step, true);
-      writeStoredWidth(sidebarEl.getBoundingClientRect().width);
+      next = clampSidebarWidth(current - step * sign);
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      applySidebarWidth(sidebarEl, current + step, true);
-      writeStoredWidth(sidebarEl.getBoundingClientRect().width);
+      next = clampSidebarWidth(current + step * sign);
     } else if (event.key === "Home") {
       event.preventDefault();
-      applySidebarWidth(sidebarEl, SIDEBAR_MIN, true);
-      writeStoredWidth(SIDEBAR_MIN);
+      next = SIDEBAR_MIN;
     } else if (event.key === "End") {
       event.preventDefault();
-      applySidebarWidth(sidebarEl, SIDEBAR_MAX, true);
-      writeStoredWidth(SIDEBAR_MAX);
+      next = SIDEBAR_MAX;
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      next = SIDEBAR_DEFAULT;
+    } else {
+      return;
     }
+    applySidebarWidth(sidebarEl, next, true);
+    updateHandleAria(next);
+    writeStoredWidth(next);
   }
 
   function mountHandle(node) {
@@ -653,15 +861,16 @@
       role: "separator",
       "aria-orientation": "vertical",
       "aria-label": "Resize sidebar",
-      title: "Drag to resize sidebar",
+      title: "Drag to resize sidebar. Arrow keys nudge; Home/End clamp; Escape resets.",
       tabIndex: 0,
       "data-cwa-chrome": "1",
     });
     handleEl.addEventListener("pointerdown", onHandlePointerDown);
-    handleEl.addEventListener("pointermove", onHandlePointerMove);
-    handleEl.addEventListener("pointerup", onHandlePointerUp);
-    handleEl.addEventListener("pointercancel", onHandlePointerUp);
+    handleEl.addEventListener("lostpointercapture", onHandlePointerUp);
+    handleEl.addEventListener("dblclick", onHandleDoubleClick);
     handleEl.addEventListener("keydown", onHandleKeyDown);
+    updateHandleAria(readStoredWidth());
+    updateHandleEdge(node);
     node.appendChild(handleEl);
   }
 
@@ -736,7 +945,7 @@
   }
 
   function releaseSidebar(node) {
-    dragging = false;
+    endSidebarDrag({ persist: false });
     unmountHandle();
     clearSidebarStyles(node);
   }
@@ -766,6 +975,7 @@
       handleEl.disabled = false;
       if (collapsed) handleEl.setAttribute("hidden", "");
       else handleEl.removeAttribute("hidden");
+      updateHandleEdge(node);
     }
     if (!collapsed) applySidebarWidth(node, readStoredWidth(), false);
   }
@@ -1456,6 +1666,7 @@
   }
 
   function onMutations(records) {
+    if (dragging) return;
     if (shouldIgnoreMutations(records)) return;
     scheduleCompatRefresh();
   }
@@ -1525,7 +1736,7 @@
               cancelAnimationFrame(rafSidebar);
               rafSidebar = 0;
             }
-            dragging = false;
+            endSidebarDrag({ persist: false });
             emitStatusSafe(snap);
           } else {
             onSpaNavigate();

@@ -77,6 +77,10 @@
   --cwa-handle: #8b93a7;
   --cwa-toolbar-bg: rgba(28, 30, 44, 0.92);
   --cwa-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --cwa-backdrop: rgba(8, 10, 18, 0.58);
+  --cwa-chrome-hatch: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2256%22%20height%3D%2256%22%20viewBox%3D%220%200%2056%2056%22%3E%3ClinearGradient%20id%3D%22hatch-dark-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2228%22%20x2%3D%2228%22%20y2%3D%2228%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.464%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.464%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.059%22%2F%3E%3Cstop%20offset%3D%22.48%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.059%22%2F%3E%3Cstop%20offset%3D%22.48%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2256%22%20height%3D%2256%22%20fill%3D%22url%28%23hatch-dark-lg0%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-dark-lg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%2210.222%22%20y1%3D%2261.435%22%20x2%3D%2216.795%22%20y2%3D%2249.074%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f0b429%22%20stop-opacity%3D%22.09%22%2F%3E%3Cstop%20offset%3D%22.025%22%20stop-color%3D%22%23f0b429%22%20stop-opacity%3D%22.09%22%2F%3E%3Cstop%20offset%3D%22.025%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2256%22%20height%3D%2256%22%20fill%3D%22url%28%23hatch-dark-lg1%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-dark-lg2%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%225.657%22%20y2%3D%225.657%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.161%22%2F%3E%3Cstop%20offset%3D%22.069%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.161%22%2F%3E%3Cstop%20offset%3D%22.069%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2256%22%20height%3D%2256%22%20fill%3D%22url%28%23hatch-dark-lg2%29%22%2F%3E%3C%2Fsvg%3E");
+  --cwa-chrome-contour: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2280%22%20viewBox%3D%220%200%2016%2080%22%3E%3ClinearGradient%20id%3D%22contour-dark-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2240%22%20x2%3D%2216%22%20y2%3D%2240%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%237dd3fc%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%237dd3fc%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-dark-lg0%29%22%2F%3E%3CradialGradient%20id%3D%22contour-dark-rg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20cx%3D%228%22%20cy%3D%2240%22%20r%3D%2211%22%20gradientTransform%3D%22matrix%28.636%200%200%201%202.909%200%29%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.2%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%235eead4%22%20stop-opacity%3D%22.2%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FradialGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-dark-rg1%29%22%2F%3E%3C%2Fsvg%3E");
+  --cwa-chrome-grit: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2232%22%20viewBox%3D%220%200%2010%2032%22%3E%3Cpath%20d%3D%22M5%204c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%238b93a7%22%20fill-opacity%3D%22.322%22%2F%3E%3Cpath%20d%3D%22M5%2014c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%238b93a7%22%20fill-opacity%3D%22.322%22%2F%3E%3Cpath%20d%3D%22M5%2023c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%238b93a7%22%20fill-opacity%3D%22.322%22%2F%3E%3C%2Fsvg%3E");
 }
 
 html.light,
@@ -106,6 +110,10 @@ body.light,
   --cwa-handle: #4b5568;
   --cwa-toolbar-bg: rgba(255, 253, 248, 0.94);
   --cwa-shadow: 0 8px 24px rgba(26, 28, 36, 0.16);
+  --cwa-backdrop: rgba(40, 36, 30, 0.38);
+  --cwa-chrome-hatch: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2240%22%20height%3D%2240%22%20viewBox%3D%220%200%2040%2040%22%3E%3ClinearGradient%20id%3D%22hatch-light-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%2211.314%22%20y2%3D%2211.314%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.071%22%2F%3E%3Cstop%20offset%3D%22.022%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.071%22%2F%3E%3Cstop%20offset%3D%22.022%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg0%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-light-lg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2220%22%20x2%3D%2220%22%20y2%3D%2220%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.078%22%2F%3E%3Cstop%20offset%3D%22.473%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.078%22%2F%3E%3Cstop%20offset%3D%22.473%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg1%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-light-lg2%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%2220%22%20y1%3D%220%22%20x2%3D%2220%22%20y2%3D%2210%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2392400e%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.045%22%20stop-color%3D%22%2392400e%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.045%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg2%29%22%2F%3E%3C%2Fsvg%3E");
+  --cwa-chrome-contour: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2280%22%20viewBox%3D%220%200%2016%2080%22%3E%3ClinearGradient%20id%3D%22contour-light-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2240%22%20x2%3D%2216%22%20y2%3D%2240%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%23075985%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%23075985%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-light-lg0%29%22%2F%3E%3CradialGradient%20id%3D%22contour-light-rg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20cx%3D%228%22%20cy%3D%2240%22%20r%3D%2211%22%20gradientTransform%3D%22matrix%28.636%200%200%201%202.909%200%29%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.18%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.18%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FradialGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-light-rg1%29%22%2F%3E%3C%2Fsvg%3E");
+  --cwa-chrome-grit: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2232%22%20viewBox%3D%220%200%2010%2032%22%3E%3Cpath%20d%3D%22M5%204c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3Cpath%20d%3D%22M5%2014c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3Cpath%20d%3D%22M5%2023c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3C%2Fsvg%3E");
 }
 
 @media (prefers-color-scheme: light) {
@@ -133,6 +141,10 @@ body.light,
     --cwa-handle: #4b5568;
     --cwa-toolbar-bg: rgba(255, 253, 248, 0.94);
     --cwa-shadow: 0 8px 24px rgba(26, 28, 36, 0.16);
+    --cwa-backdrop: rgba(40, 36, 30, 0.38);
+    --cwa-chrome-hatch: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2240%22%20height%3D%2240%22%20viewBox%3D%220%200%2040%2040%22%3E%3ClinearGradient%20id%3D%22hatch-light-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%2211.314%22%20y2%3D%2211.314%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.071%22%2F%3E%3Cstop%20offset%3D%22.022%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.071%22%2F%3E%3Cstop%20offset%3D%22.022%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg0%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-light-lg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2220%22%20x2%3D%2220%22%20y2%3D%2220%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.45%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.078%22%2F%3E%3Cstop%20offset%3D%22.473%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.078%22%2F%3E%3Cstop%20offset%3D%22.473%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg1%29%22%2F%3E%3ClinearGradient%20id%3D%22hatch-light-lg2%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%2220%22%20y1%3D%220%22%20x2%3D%2220%22%20y2%3D%2210%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2392400e%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.045%22%20stop-color%3D%22%2392400e%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.045%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2240%22%20height%3D%2240%22%20fill%3D%22url%28%23hatch-light-lg2%29%22%2F%3E%3C%2Fsvg%3E");
+    --cwa-chrome-contour: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2280%22%20viewBox%3D%220%200%2016%2080%22%3E%3ClinearGradient%20id%3D%22contour-light-lg0%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20x1%3D%220%22%20y1%3D%2240%22%20x2%3D%2216%22%20y2%3D%2240%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.475%22%20stop-color%3D%22%23075985%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%23075985%22%20stop-opacity%3D%22.102%22%2F%3E%3Cstop%20offset%3D%22.506%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FlinearGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-light-lg0%29%22%2F%3E%3CradialGradient%20id%3D%22contour-light-rg1%22%20gradientUnits%3D%22userSpaceOnUse%22%20spreadMethod%3D%22repeat%22%20cx%3D%228%22%20cy%3D%2240%22%20r%3D%2211%22%20gradientTransform%3D%22matrix%28.636%200%200%201%202.909%200%29%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%22.455%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.18%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%230f766e%22%20stop-opacity%3D%22.18%22%2F%3E%3Cstop%20offset%3D%22.518%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000%22%20stop-opacity%3D%220%22%2F%3E%3C%2FradialGradient%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%2280%22%20fill%3D%22url%28%23contour-light-rg1%29%22%2F%3E%3C%2Fsvg%3E");
+    --cwa-chrome-grit: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2232%22%20viewBox%3D%220%200%2010%2032%22%3E%3Cpath%20d%3D%22M5%204c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3Cpath%20d%3D%22M5%2014c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3Cpath%20d%3D%22M5%2023c.55%200%201%20.45%201%201v3c0%20.55-.45%201-1%201s-1-.45-1-1v-3c0-.55.45-1%201-1Z%22%20fill%3D%22%234b5568%22%20fill-opacity%3D%22.278%22%2F%3E%3C%2Fsvg%3E");
   }
 }
 
@@ -156,6 +168,7 @@ body {
  * conversation scroller still fills the viewport. */
 nav,
 aside,
+[data-testid="history-sidebar"],
 [data-testid="left-sidebar"],
 [data-testid="sidebar"],
 #stage-slideover-sidebar {
@@ -251,7 +264,11 @@ main [class*="mx-auto"] {
   .cwa-palette,
   .cwa-palette-backdrop,
   .cwa-minimap-tick,
-  .cwa-sidebar-handle {
+  .cwa-sidebar-handle,
+  .cwa-sidebar-handle::before,
+  [data-cwa-chrome].cwa-toolbar::after,
+  [data-cwa-chrome].cwa-export-status::after,
+  [data-cwa-chrome].cwa-palette::after {
     transition: none !important;
     animation: none !important;
   }
@@ -350,9 +367,17 @@ form:has([id*="prompt-textarea" i]):focus-within,
   display: flex;
   gap: 6px;
   padding: 6px;
+  overflow: hidden;
+  isolation: isolate;
   border: 1px solid var(--cwa-border);
   border-radius: 999px;
-  background: var(--cwa-toolbar-bg);
+  background-color: var(--cwa-toolbar-bg);
+  background-image:
+    var(--cwa-chrome-hatch),
+    radial-gradient(120% 140% at 8% 0%, color-mix(in srgb, var(--cwa-accent) 18%, transparent), transparent 54%),
+    radial-gradient(90% 90% at 100% 120%, color-mix(in srgb, var(--cwa-accent-warm) 12%, transparent), transparent 48%);
+  background-size: 56px 56px, auto, auto;
+  background-blend-mode: multiply, normal, normal;
   box-shadow: var(--cwa-shadow);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -396,10 +421,16 @@ form:has([id*="prompt-textarea" i]):focus-within,
   right: calc(var(--cwa-minimap-width) + 16px);
   z-index: var(--cwa-z-chrome);
   max-width: min(28rem, calc(100vw - 48px));
+  overflow: hidden;
+  isolation: isolate;
   padding: 8px 12px;
   border: 1px solid var(--cwa-border);
   border-radius: 12px;
-  background: var(--cwa-toolbar-bg);
+  background-color: var(--cwa-toolbar-bg);
+  background-image:
+    var(--cwa-chrome-hatch),
+    radial-gradient(100% 120% at 0% 0%, color-mix(in srgb, var(--cwa-accent) 14%, transparent), transparent 60%);
+  background-size: 56px 56px, auto;
   color: var(--cwa-text);
   font: 600 12px/1.35 system-ui, -apple-system, sans-serif;
   box-shadow: var(--cwa-shadow);
@@ -413,27 +444,58 @@ form:has([id*="prompt-textarea" i]):focus-within,
   display: none;
 }
 
+html[data-cwa-sidebar-dragging="true"],
+html[data-cwa-sidebar-dragging="true"] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 .cwa-sidebar-handle {
   position: absolute;
-  top: 0;
-  right: 0;
+  inset-block: 0;
+  inset-inline-end: 0;
   z-index: calc(var(--cwa-z-chrome) - 10);
-  width: 6px;
-  height: 100%;
+  display: grid;
+  inline-size: 10px;
+  block-size: 100%;
+  place-items: center;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: var(--cwa-handle);
-  opacity: 0.55;
+  background-color: transparent;
+  background-image: var(--cwa-chrome-grit);
+  background-repeat: repeat-y;
+  background-position: center;
+  opacity: 0.7;
   cursor: col-resize;
   touch-action: none;
+}
+
+.cwa-sidebar-handle[data-edge="start"] {
+  inset-inline-end: auto;
+  inset-inline-start: 0;
+}
+
+.cwa-sidebar-handle::before {
+  content: "";
+  inline-size: 3px;
+  block-size: clamp(48px, 18%, 120px);
+  border-radius: 999px;
+  background: var(--cwa-handle);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cwa-handle) 25%, transparent);
+  transition: background-color 120ms ease, block-size 120ms ease;
 }
 
 .cwa-sidebar-handle:hover,
 .cwa-sidebar-handle[data-active="true"] {
   opacity: 1;
+}
+
+.cwa-sidebar-handle:hover::before,
+.cwa-sidebar-handle[data-active="true"]::before {
   background: var(--cwa-accent);
+  block-size: clamp(64px, 24%, 140px);
 }
 
 .cwa-sidebar-handle[hidden] {
@@ -448,8 +510,14 @@ form:has([id*="prompt-textarea" i]):focus-within,
   z-index: calc(var(--cwa-z-chrome) - 20);
   width: var(--cwa-minimap-width);
   overflow: hidden;
+  isolation: isolate;
   border-left: 1px solid var(--cwa-border);
-  background: var(--cwa-surface);
+  background-color: var(--cwa-surface);
+  background-image:
+    var(--cwa-chrome-contour),
+    linear-gradient(180deg, color-mix(in srgb, var(--cwa-accent) 10%, transparent), transparent 28%, transparent 72%, color-mix(in srgb, var(--cwa-accent-warm) 8%, transparent));
+  background-size: 16px 80px, auto;
+  background-repeat: repeat-y, no-repeat;
   cursor: pointer;
 }
 
@@ -475,7 +543,11 @@ form:has([id*="prompt-textarea" i]):focus-within,
   position: fixed;
   inset: 0;
   z-index: calc(var(--cwa-z-chrome) + 1);
-  background: rgba(8, 10, 18, 0.55);
+  background-color: var(--cwa-backdrop);
+  background-image:
+    var(--cwa-chrome-hatch),
+    radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--cwa-surface) 18%, transparent), var(--cwa-backdrop) 72%);
+  background-size: 56px 56px, auto;
 }
 
 .cwa-palette-backdrop[hidden] {
@@ -488,10 +560,16 @@ form:has([id*="prompt-textarea" i]):focus-within,
   left: 50%;
   z-index: calc(var(--cwa-z-chrome) + 2);
   width: min(520px, calc(100vw - 32px));
+  overflow: hidden;
+  isolation: isolate;
   transform: translateX(-50%);
   border: 1px solid var(--cwa-border);
   border-radius: 16px;
-  background: var(--cwa-surface);
+  background-color: var(--cwa-surface);
+  background-image:
+    var(--cwa-chrome-hatch),
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--cwa-accent) 12%, transparent), transparent 55%);
+  background-size: 40px 40px, auto;
   color: var(--cwa-text);
   box-shadow: var(--cwa-shadow);
 }
@@ -546,4 +624,42 @@ form:has([id*="prompt-textarea" i]):focus-within,
   padding: 8px 16px 12px;
   color: var(--cwa-text-muted);
   font: 12px/1.4 system-ui, -apple-system, sans-serif;
+}
+
+/* ---- CWA-owned chrome textures (Takumi SVG tiles) ----
+ * Scoped to [data-cwa-chrome] only. Do not wallpaper html/body/main.
+ * Source: inject/patterns/*.svg (`pnpm regen:chrome-patterns`).
+ * Runtime: data-URIs — Pake inject has no file URL for sibling SVGs.
+ */
+[data-cwa-chrome].cwa-toolbar::after,
+[data-cwa-chrome].cwa-export-status::after,
+[data-cwa-chrome].cwa-palette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    transparent 18%,
+    color-mix(in srgb, var(--cwa-accent) 14%, transparent) 50%,
+    transparent 82%
+  );
+  background-size: 220% 100%;
+  opacity: 0.42;
+  mix-blend-mode: soft-light;
+  animation: cwa-chrome-sheen 18s ease-in-out infinite;
+}
+
+[data-cwa-chrome].cwa-toolbar > *,
+[data-cwa-chrome].cwa-export-status > *,
+[data-cwa-chrome].cwa-palette > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes cwa-chrome-sheen {
+  0%,
+  100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
